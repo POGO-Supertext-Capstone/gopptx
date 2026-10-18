@@ -22,6 +22,7 @@ type Slide struct {
 	XMLNSP15               string            `xml:"xmlns:p15,attr"`
 	XMLNSMC                string            `xml:"xmlns:mc,attr"`
 	CommonSlideData        SlideData         `xml:"p:cSld"`
+	ColorMapOverride       *ClrMapOverride   `xml:"p:clrMapOvr,omitempty"`
 	AlternateContent       *alternateContent `xml:"mc:AlternateContent"`
 	DecodeAlternateContent *innerXML         `xml:"http://schemas.openxmlformats.org/markup-compatibility/2006 AlternateContent"`
 }
@@ -34,6 +35,7 @@ type ShapeTree struct {
 	NonVisualGroupShapeProperties *NonVisualGroupShapeProperties `xml:"p:nvGrpSpPr,omitempty"`
 	GroupShapeProperties          *GroupShapeProperties          `xml:"p:grpSpPr,omitempty"`
 	Shape                         []Shape                        `xml:"p:sp"`
+	Picture                       []Picture                      `xml:"p:pic"`
 }
 
 type NonVisualGroupShapeProperties struct {
@@ -69,8 +71,71 @@ type NonVisualProperties struct {
 	Ph *Ph `xml:"p:ph,omitempty"`
 }
 
+// Picture defines a picture shape (p:pic) in the slide shape tree.
+type Picture struct {
+	NonVisualPictureProperties *NonVisualPictureProperties `xml:"p:nvPicPr"`
+	BlipFill                   *BlipFill                   `xml:"p:blipFill"`
+	ShapeProperties            *ShapeProperties            `xml:"p:spPr"`
+}
+
+// NonVisualPictureProperties defines the non-visual properties of a picture
+// (p:nvPicPr).
+type NonVisualPictureProperties struct {
+	CommonNonVisualProperties        *CommonNonVisualProperties        `xml:"p:cNvPr"`
+	CommonNonVisualPictureProperties *CommonNonVisualPictureProperties `xml:"p:cNvPicPr"`
+	NonVisualProperties              *NonVisualProperties              `xml:"p:nvPr"`
+}
+
+// CommonNonVisualPictureProperties defines the common non-visual properties
+// of a picture (p:cNvPicPr).
+type CommonNonVisualPictureProperties struct {
+	PreferRelativeResize *int `xml:"preferRelativeResize,attr,omitempty"`
+}
+
+// BlipFill defines the blip fill (p:blipFill) element of a picture.
+type BlipFill struct {
+	Blip    *Blip    `xml:"a:blip"`
+	Stretch *Stretch `xml:"a:stretch"`
+}
+
+// Blip defines the blip (a:blip) element of the blip fill. The image part is
+// referenced by the relationship id in the embed attribute.
+type Blip struct {
+	Embed       string       `xml:"r:embed,attr"`
+	AlphaModFix *AlphaModFix `xml:"a:alphaModFix,omitempty"`
+}
+
+// AlphaModFix defines the alpha modulation fix (a:alphaModFix) element of
+// the blip.
+type AlphaModFix struct {
+	Amount *int `xml:"amt,attr,omitempty"`
+}
+
+// Stretch defines the stretch (a:stretch) element of the blip fill.
+type Stretch struct {
+	FillRect *FillRect `xml:"a:fillRect"`
+}
+
+// FillRect defines the fill rectangle (a:fillRect) element of the stretch.
+type FillRect struct {
+	Left  *int `xml:"l,attr,omitempty"`
+	Top   *int `xml:"t,attr,omitempty"`
+	Right *int `xml:"r,attr,omitempty"`
+	Bot   *int `xml:"b,attr,omitempty"`
+}
+
+// ClrMapOverride defines the color map override (p:clrMapOvr) element of
+// the slide.
+type ClrMapOverride struct {
+	MasterClrMapping *MasterClrMapping `xml:"a:masterClrMapping"`
+}
+
+// MasterClrMapping defines the master color mapping (a:masterClrMapping)
+// element.
+type MasterClrMapping struct{}
+
 type CommonNonVisualShapeProperties struct {
-	TxBox      *bool       `xml:"txBox,attr,omitempty"`
+	TxBox      *XMLBool    `xml:"txBox,attr,omitempty"`
 	ShapeLocks *ShapeLocks `xml:"a:spLocks,omitempty"`
 }
 
@@ -93,22 +158,55 @@ type Line struct {
 
 type TextBody struct {
 	BodyProperties *BodyProperties `xml:"a:bodyPr"`
+	ListStyle      *struct{}       `xml:"a:lstStyle,omitempty"`
 	Paragraph      []Paragraph     `xml:"a:p"`
 }
 
 type BodyProperties struct {
-	LIns      *int       `xml:"lIns,attr,omitempty"`
-	RIns      *int       `xml:"rIns,attr,omitempty"`
-	TIns      *int       `xml:"tIns,attr,omitempty"`
-	BIns      *int       `xml:"bIns,attr,omitempty"`
-	Anchor    *string    `xml:"anchor,attr,omitempty"`
-	NoAutofit *NoAutofit `xml:"a:noAutofit,omitempty"`
+	AnchorCtr        *int         `xml:"anchorCtr,attr,omitempty"`
+	Anchor           *string      `xml:"anchor,attr,omitempty"`
+	BIns             *int         `xml:"bIns,attr,omitempty"`
+	LIns             *int         `xml:"lIns,attr,omitempty"`
+	SpcFirstLastPara *int         `xml:"spcFirstLastPara,attr,omitempty"`
+	RIns             *int         `xml:"rIns,attr,omitempty"`
+	Wrap             *string      `xml:"wrap,attr,omitempty"`
+	TIns             *int         `xml:"tIns,attr,omitempty"`
+	NormAutofit      *NormAutofit `xml:"a:normAutofit,omitempty"`
+	NoAutofit        *NoAutofit   `xml:"a:noAutofit,omitempty"`
+}
+
+// NormAutofit defines the normal autofit (a:normAutofit) element of the body
+// properties.
+type NormAutofit struct {
+	FontScale            *int `xml:"fontScale,attr,omitempty"`
+	LineSpacingReduction *int `xml:"lnSpcReduction,attr,omitempty"`
 }
 
 type Paragraph struct {
 	ParagraphProperties       *ParagraphProperties `xml:"a:pPr,omitempty"`
 	Runs                      []Runs               `xml:"a:r"`
 	EndParagraphRunProperties *RunProperties       `xml:"a:endParaRPr,omitempty"`
+}
+
+// ParagraphProperties defines the paragraph properties (a:pPr) element of
+// the paragraph.
+type ParagraphProperties struct {
+	Indent        *int           `xml:"indent,attr,omitempty"`
+	Lvl           *int           `xml:"lvl,attr,omitempty"`
+	MarL          *int           `xml:"marL,attr,omitempty"`
+	RTL           *int           `xml:"rtl,attr,omitempty"`
+	Align         *string        `xml:"algn,attr,omitempty"`
+	LineSpacing   *LineSpacing   `xml:"a:lnSpc,omitempty"`
+	SpacingBefore *SpacingChange `xml:"a:spcBef,omitempty"`
+	SpacingAfter  *SpacingChange `xml:"a:spcAft,omitempty"`
+	BuNone        *struct{}      `xml:"a:buNone,omitempty"`
+}
+
+// SpacingChange defines the spacing before (a:spcBef) or spacing after
+// (a:spcAft) element of the paragraph properties.
+type SpacingChange struct {
+	SpacingPercent *SpacingPercent `xml:"a:spcPct,omitempty"`
+	SpacingPts     *SpacingPts     `xml:"a:spcPts,omitempty"`
 }
 
 type Runs struct {
@@ -131,10 +229,16 @@ type SolidFill struct {
 
 type decodeSlide struct {
 	mu                     sync.Mutex
-	XMLName                xml.Name          `xml:"sld"`
-	CommonSlideData        decodeSlideData   `xml:"cSld"`
-	AlternateContent       *alternateContent `xml:"mc:AlternateContent"`
-	DecodeAlternateContent *innerXML         `xml:"http://schemas.openxmlformats.org/markup-compatibility/2006 AlternateContent"`
+	XMLName                xml.Name              `xml:"sld"`
+	CommonSlideData        decodeSlideData       `xml:"cSld"`
+	ColorMapOverride       *decodeClrMapOverride `xml:"clrMapOvr,omitempty"`
+	AlternateContent       *alternateContent     `xml:"mc:AlternateContent"`
+	DecodeAlternateContent *innerXML             `xml:"http://schemas.openxmlformats.org/markup-compatibility/2006 AlternateContent"`
+}
+
+// decodeClrMapOverride directly maps the clrMapOvr element of the slide.
+type decodeClrMapOverride struct {
+	MasterClrMapping *MasterClrMapping `xml:"masterClrMapping,omitempty"`
 }
 
 type decodeSlideData struct {
@@ -145,6 +249,7 @@ type decodeShapeTree struct {
 	NonVisualGroupShapeProperties *decodeNonVisualGroupShapeProperties `xml:"nvGrpSpPr,omitempty"`
 	GroupShapeProperties          *decodeGroupShapeProperties          `xml:"grpSpPr,omitempty"`
 	Shape                         []decodeShape                        `xml:"sp"`
+	Picture                       []decodePicture                      `xml:"pic"`
 }
 
 type decodeNonVisualGroupShapeProperties struct {
@@ -154,8 +259,9 @@ type decodeNonVisualGroupShapeProperties struct {
 }
 
 type CommonNonVisualProperties struct {
-	ID   int    `xml:"id,attr"`
-	Name string `xml:"name,attr"`
+	ID    int    `xml:"id,attr"`
+	Name  string `xml:"name,attr"`
+	Title string `xml:"title,attr,omitempty"`
 }
 
 type CommonNonVisualGroupShapeProperties struct{}
@@ -165,6 +271,7 @@ type decodeNonVisualProperties struct {
 }
 
 type Ph struct {
+	Idx  *int    `xml:"idx,attr,omitempty"`
 	Type *string `xml:"type,attr,omitempty"`
 }
 
@@ -193,6 +300,38 @@ type decodeShape struct {
 	NonVisualShapeProperties *decodeNonVisualShapeProperties `xml:"nvSpPr"`
 	ShapeProperties          *DecodeShapeProperties          `xml:"spPr"`
 	TextBody                 *DecodeTextBody                 `xml:"txBody,omitempty"`
+}
+
+// decodePicture directly maps the pic element in the shape tree.
+type decodePicture struct {
+	NonVisualPictureProperties *decodeNonVisualPictureProperties `xml:"nvPicPr"`
+	BlipFill                   *decodeBlipFill                   `xml:"blipFill"`
+	ShapeProperties            *DecodeShapeProperties            `xml:"spPr"`
+}
+
+// decodeNonVisualPictureProperties directly maps the nvPicPr element of the
+// picture.
+type decodeNonVisualPictureProperties struct {
+	CommonNonVisualProperties        *CommonNonVisualProperties        `xml:"cNvPr"`
+	CommonNonVisualPictureProperties *CommonNonVisualPictureProperties `xml:"cNvPicPr"`
+	NonVisualProperties              *decodeNonVisualProperties        `xml:"nvPr"`
+}
+
+// decodeBlipFill directly maps the blipFill element of the picture.
+type decodeBlipFill struct {
+	Blip    *decodeBlip    `xml:"blip"`
+	Stretch *decodeStretch `xml:"stretch"`
+}
+
+// decodeBlip directly maps the blip element of the blip fill.
+type decodeBlip struct {
+	Embed       string       `xml:"http://schemas.openxmlformats.org/officeDocument/2006/relationships embed,attr"`
+	AlphaModFix *AlphaModFix `xml:"alphaModFix,omitempty"`
+}
+
+// decodeStretch directly maps the stretch element of the blip fill.
+type decodeStretch struct {
+	FillRect *FillRect `xml:"fillRect"`
 }
 
 type decodeNonVisualShapeProperties struct {
@@ -239,35 +378,64 @@ type decodeLine struct {
 
 type DecodeTextBody struct {
 	BodyProperties *DecodeBodyProperties `xml:"bodyPr"`
+	ListStyle      *struct{}             `xml:"lstStyle,omitempty"`
 	Paragraph      []DecodeParagraph     `xml:"p"`
 }
 
 type DecodeBodyProperties struct {
-	LIns      *int       `xml:"lIns,attr,omitempty"`
-	RIns      *int       `xml:"rIns,attr,omitempty"`
-	TIns      *int       `xml:"tIns,attr,omitempty"`
-	BIns      *int       `xml:"bIns,attr,omitempty"`
-	Anchor    *string    `xml:"anchor,attr,omitempty"`
-	NoAutofit *NoAutofit `xml:"noAutofit,omitempty"`
+	AnchorCtr        *int         `xml:"anchorCtr,attr,omitempty"`
+	Anchor           *string      `xml:"anchor,attr,omitempty"`
+	BIns             *int         `xml:"bIns,attr,omitempty"`
+	LIns             *int         `xml:"lIns,attr,omitempty"`
+	SpcFirstLastPara *int         `xml:"spcFirstLastPara,attr,omitempty"`
+	RIns             *int         `xml:"rIns,attr,omitempty"`
+	Wrap             *string      `xml:"wrap,attr,omitempty"`
+	TIns             *int         `xml:"tIns,attr,omitempty"`
+	NormAutofit      *NormAutofit `xml:"normAutofit,omitempty"`
+	NoAutofit        *NoAutofit   `xml:"noAutofit,omitempty"`
 }
 
 type NoAutofit struct{}
 
 type DecodeParagraph struct {
-	ParagraphProperties       *ParagraphProperties `xml:"pPr,omitempty"`
-	Runs                      []DecodeRuns         `xml:"r"`
-	EndParagraphRunProperties *DecodeRunProperties `xml:"endParaRPr,omitempty"`
+	ParagraphProperties       *DecodeParagraphProperties `xml:"pPr,omitempty"`
+	Runs                      []DecodeRuns               `xml:"r"`
+	EndParagraphRunProperties *DecodeRunProperties       `xml:"endParaRPr,omitempty"`
 }
 
-type ParagraphProperties struct {
-	Indent      *int         `xml:"indent,attr,omitempty"`
-	Align       *string      `xml:"algn,attr,omitempty"`
-	LineSpacing *LineSpacing `xml:"lnSpc,omitempty"`
-	BuNone      *struct{}    `xml:"buNone,omitempty"`
+// DecodeParagraphProperties directly maps the pPr element of the paragraph.
+type DecodeParagraphProperties struct {
+	Indent        *int                 `xml:"indent,attr,omitempty"`
+	Lvl           *int                 `xml:"lvl,attr,omitempty"`
+	MarL          *int                 `xml:"marL,attr,omitempty"`
+	RTL           *int                 `xml:"rtl,attr,omitempty"`
+	Align         *string              `xml:"algn,attr,omitempty"`
+	LineSpacing   *DecodeLineSpacing   `xml:"lnSpc,omitempty"`
+	SpacingBefore *DecodeSpacingChange `xml:"spcBef,omitempty"`
+	SpacingAfter  *DecodeSpacingChange `xml:"spcAft,omitempty"`
+	BuNone        *struct{}            `xml:"buNone,omitempty"`
+}
+
+// DecodeLineSpacing directly maps the lnSpc element of the paragraph
+// properties.
+type DecodeLineSpacing struct {
+	SpacingPercent *SpacingPercent `xml:"spcPct,omitempty"`
+}
+
+// DecodeSpacingChange directly maps the spcBef or spcAft element of the
+// paragraph properties.
+type DecodeSpacingChange struct {
+	SpacingPercent *SpacingPercent `xml:"spcPct,omitempty"`
+	SpacingPts     *SpacingPts     `xml:"spcPts,omitempty"`
+}
+
+// SpacingPts defines the spacing in points (a:spcPts) element.
+type SpacingPts struct {
+	Val int `xml:"val,attr"`
 }
 
 type LineSpacing struct {
-	SpacingPercent *SpacingPercent `xml:"spcPct"`
+	SpacingPercent *SpacingPercent `xml:"a:spcPct"`
 }
 
 type SpacingPercent struct {

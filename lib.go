@@ -150,7 +150,98 @@ func (f *File) readXML(name string) []byte {
 // saveFileList provides a function to update given file content in file list
 // of presentation.
 func (f *File) saveFileList(name string, content []byte) {
-	f.Pkg.Store(name, append([]byte(xml.Header), content...))
+	f.Pkg.Store(name, append(f.originalXMLHeader(name), selfCloseEmptyElements(content)...))
+}
+
+// originalXMLHeader provides a function to get the origin XML declaration
+// (including the line break that follows it) of the part, so the serialized
+// part keeps its origin header. It falls back to the default XML header.
+func (f *File) originalXMLHeader(name string) []byte {
+	cached, ok := f.xmlHeader.Load(name)
+	if !ok {
+		cached = xmlDeclaration(f.readXML(name))
+		if len(cached.([]byte)) == 0 {
+			if file, err := f.readTemp(name); err == nil {
+				defer file.Close()
+				buf := make([]byte, 256)
+				if n, _ := file.Read(buf); n > 0 {
+					cached = xmlDeclaration(buf[:n])
+				}
+			}
+		}
+		f.xmlHeader.Store(name, cached)
+	}
+	if h := cached.([]byte); len(h) != 0 {
+		header := make([]byte, len(h))
+		copy(header, h)
+		return header
+	}
+	return []byte(xml.Header)
+}
+
+// xmlDeclaration extracts the leading XML declaration of the raw part content
+// together with the line break that follows it. It returns an empty slice
+// when the content has no XML declaration.
+func xmlDeclaration(content []byte) []byte {
+	if !bytes.HasPrefix(content, []byte("<?xml")) {
+		return nil
+	}
+	idx := bytes.Index(content, []byte("?>"))
+	if idx == -1 {
+		return nil
+	}
+	end := idx + 2
+	if end < len(content) && (content[end] == '\r' || content[end] == '\n') {
+		end++
+	}
+	return content[:end]
+}
+
+// selfCloseEmptyElements provides a function to convert empty elements in the
+// serialized XML content from the explicit form `<x></x>` to the self-closing
+// form `<x/>`. Text content elements (a:t) keep the explicit form.
+func selfCloseEmptyElements(content []byte) []byte {
+	out := make([]byte, 0, len(content))
+	for len(content) > 0 {
+		idx := bytes.IndexByte(content, '<')
+		if idx == -1 {
+			return append(out, content...)
+		}
+		out = append(out, content[:idx]...)
+		content = content[idx:]
+		end := bytes.IndexByte(content, '>')
+		if end == -1 {
+			return append(out, content...)
+		}
+		tag := content[1:end]
+		nameEnd := bytes.IndexAny(tag, " /")
+		if nameEnd == -1 {
+			nameEnd = len(tag)
+		}
+		name := string(tag[:nameEnd])
+		if isElementName(tag[:nameEnd]) && name != "a:t" && name != "t" &&
+			bytes.HasPrefix(content[end+1:], append(append([]byte("</"), tag[:nameEnd]...), '>')) {
+			// an empty element in the explicit form, convert it to the
+			// self-closing form
+			out = append(out, content[:end]...)
+			out = append(out, '/', '>')
+			content = content[end+4+len(name):]
+			continue
+		}
+		out = append(out, content[:end+1]...)
+		content = content[end+1:]
+	}
+	return out
+}
+
+// isElementName reports whether the given tag is a valid XML element name.
+func isElementName(name []byte) bool {
+	if len(name) == 0 {
+		return false
+	}
+	c := name[0]
+	return c == ':' || c == '_' ||
+		('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
 }
 
 // getRootElement extract root element attributes by given XML decoder.

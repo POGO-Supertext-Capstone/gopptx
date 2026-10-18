@@ -29,6 +29,11 @@ var (
 	// ErrPresentationFileFormat defined the error message on receive an
 	// unsupported presentation file format.
 	ErrPresentationFileFormat = errors.New("unsupported presentation file format")
+	// ErrImageEmpty defined the error message on receive the empty image data.
+	ErrImageEmpty = errors.New("the image data is empty")
+	// ErrUnsupportedImageFormat defined the error message on receive an
+	// unsupported image format.
+	ErrUnsupportedImageFormat = errors.New("unsupported image format")
 )
 
 // ErrSlideNotExist defined an error of slide that does not exist.
@@ -59,4 +64,25 @@ type ErrShapeNotExist struct {
 // Error returns the error message on receiving the non existing shape.
 func (err ErrShapeNotExist) Error() string {
 	return fmt.Sprintf("shape %d does not exist", err.ShapeID)
+}
+
+// ErrPictureNotExist defined an error of picture that does not exist.
+type ErrPictureNotExist struct {
+	PictureID int
+}
+
+// Error returns the error message on receiving the non existing picture.
+func (err ErrPictureNotExist) Error() string {
+	return fmt.Sprintf("picture %d does not exist", err.PictureID)
+}
+
+// ErrImageNotExist defined an error of image relationship that does not exist.
+type ErrImageNotExist struct {
+	RelationshipID string
+}
+
+// Error returns the error message on receiving the non existing image
+// relationship.
+func (err ErrImageNotExist) Error() string {
+	return fmt.Sprintf("image relationship %s does not exist", err.RelationshipID)
 }

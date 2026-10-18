@@ -236,20 +236,55 @@ func (f *File) setContentTypePartProjectExtensions(contentType string) error {
 	return err
 }
 
-// contentTypesWriter provides a function to save [Content_Types].xml after serialize structure.
+// contentTypesWriter provides a function to save [Content_Types].xml after
+// serialize structure.
 func (f *File) contentTypesWriter() {
-	if f.ContentTypes != nil {
-		output, _ := xml.Marshal(f.ContentTypes)
-		f.saveFileList(defaultXMLPathContentTypes, output)
+	if f.ContentTypes == nil {
+		return
 	}
+	// keep the origin part bytes when the content types are not changed, so
+	// the saved file stays identical to the origin one
+	unchanged := false
+	f.ContentTypes.mu.Lock()
+	if content, ok := f.Pkg.Load(defaultXMLPathContentTypes); ok {
+		c := contentTypes{}
+		if err := xml.Unmarshal(namespaceStrictToTransitional(content.([]byte)), &c); err == nil {
+			unchanged = contentTypesEqual(f.ContentTypes, &c)
+		}
+	}
+	f.ContentTypes.mu.Unlock()
+	if unchanged {
+		return
+	}
+	output, _ := xml.Marshal(f.ContentTypes)
+	f.saveFileList(defaultXMLPathContentTypes, output)
+}
+
+// contentTypesEqual reports whether the two content types structures are
+// equal.
+func contentTypesEqual(a, b *contentTypes) bool {
+	if len(a.Defaults) != len(b.Defaults) || len(a.Overrides) != len(b.Overrides) {
+		return false
+	}
+	for i := range a.Defaults {
+		if a.Defaults[i] != b.Defaults[i] {
+			return false
+		}
+	}
+	for i := range a.Overrides {
+		if a.Overrides[i] != b.Overrides[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // presentationWriter provides a function to save presentation.xml after serialize structure.
 func (f *File) presentationWriter() {
 	newSlideID := func(s decodeSlideID) slideID {
 		return slideID{
-			RelationshipID: s.RelationshipID,
 			SlideID:        s.SlideID,
+			RelationshipID: s.RelationshipID,
 		}
 	}
 
@@ -268,6 +303,15 @@ func (f *File) presentationWriter() {
 			slides[i] = newSlideID(s)
 		}
 
+		var notesMaster *notesMasterList
+		if len(f.Presentation.NotesMaster.NotesMaster.RelationshipID) > 0 {
+			notesMaster = &notesMasterList{
+				NotesMaster: notesMasterID{
+					RelationshipID: f.Presentation.NotesMaster.NotesMaster.RelationshipID,
+				},
+			}
+		}
+
 		output, _ := xml.Marshal(&presentation{
 			XMLName:  f.Presentation.XMLName,
 			XMLNSA:   NameSpaceDrawingML.Value,
@@ -277,13 +321,14 @@ func (f *File) presentationWriter() {
 			XMLNSP15: NameSpacePowerPointR15.Value,
 			XMLNSMC:  SourceRelationshipCompatibility.Value,
 			MasterSlide: masterSlideList{
-				MasterSlide: slideID(f.Presentation.MasterSlide.MasterSlide),
+				MasterSlide: newSlideID(f.Presentation.MasterSlide.MasterSlide),
 			},
-			Slides: &slideList{
-				Slide: slides,
-			},
-			SlideSize: f.Presentation.SlideSize,
-			NotesSize: f.Presentation.NotesSize,
+			NotesMaster:      notesMaster,
+			Slides:           &slideList{Slide: slides},
+			SlideSize:        f.Presentation.SlideSize,
+			NotesSize:        f.Presentation.NotesSize,
+			DefaultTextStyle: f.Presentation.DefaultTextStyle,
+			ExtList:          f.Presentation.ExtList,
 		})
 		f.saveFileList(f.getPresentationPath(), replaceRelationshipsBytes(f.replaceNameSpaceBytes(f.getPresentationPath(), output)))
 	}
@@ -299,31 +344,52 @@ func replaceRelationshipsBytes(content []byte) []byte {
 }
 
 // replaceNameSpaceBytes provides a function to replace the XML root element
-// attribute by the given component part path and XML content.
+// attributes by the given component part path and XML content. The original
+// root element attributes (namespaces and other attributes) captured while
+// reading the part are restored, so the serialized part keeps its origin root
+// element.
 func (f *File) replaceNameSpaceBytes(path string, content []byte) []byte {
-	// sourceXmlns := []byte(`xmlns="http://schemas.openxmlformats.org/presentationml/2006/main">`)
-	// targetXmlns := []byte(templateNamespaceIDMap)
-	// if attrs, ok := f.xmlAttr.Load(path); ok {
-	// 	targetXmlns = []byte(genXMLNamespace(attrs.([]xml.Attr)))
-	// }
-	// return bytesReplace(content, sourceXmlns, bytes.ReplaceAll(targetXmlns, []byte(" mc:Ignorable=\"r\""), []byte{}), -1)
-
-	// if !(strings.HasPrefix(path, "ppt/slides/slide") && strings.HasSuffix(path, ".xml")) &&
-	// 	path != "ppt/presentation.xml" {
-	// 	return content
-	// }
-
-	// if strings.HasPrefix(path, "ppt/slides/slide") {
-	// 	xmlns := ` xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="p14" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main"`
-	// 	content = bytes.Replace(content, []byte("<p:sld>"), []byte("<p:sld"+xmlns+">"), 1)
-	// }
-
-	// if path == "ppt/presentation.xml" {
-	// 	xmlns := ` xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="p14" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main"`
-	// 	content = bytes.Replace(content, []byte("<p:presentation>"), []byte("<p:presentation"+xmlns+">"), 1)
-	// }
-
-	return content
+	attrs, ok := f.xmlAttr.Load(path)
+	if !ok {
+		return content
+	}
+	attrList := attrs.([]xml.Attr)
+	if len(attrList) == 0 {
+		return content
+	}
+	// ensure that every namespace prefix used by the serialized content is
+	// declared in the restored root element attributes
+	merged := make([]xml.Attr, 0, len(attrList)+6)
+	merged = append(merged, attrList...)
+	for _, ns := range []xml.Attr{
+		NameSpaceDrawingML, NameSpacePresentationML, SourceRelationship,
+		NameSpacePowerPointR14, NameSpacePowerPointR15, SourceRelationshipCompatibility,
+	} {
+		exists := false
+		for _, attr := range merged {
+			if attr.Name == ns.Name {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			merged = append(merged, ns)
+		}
+	}
+	idx := bytes.IndexByte(content, '>')
+	if idx == -1 {
+		return content
+	}
+	nameEnd := bytes.IndexAny(content[1:idx], " /")
+	if nameEnd == -1 {
+		return content
+	}
+	result := make([]byte, 0, len(content))
+	result = append(result, content[:nameEnd+1]...)
+	result = append(result, ' ')
+	result = append(result, genXMLNamespace(merged)...)
+	result = append(result, content[idx+1:]...)
+	return result
 }
 
 // genXMLNamespace generate serialized XML attributes with a multi namespace
@@ -407,7 +473,22 @@ func (f *File) themeWriter() {
 func (f *File) relsWriter() {
 	f.Relationships.Range(func(path, rel interface{}) bool {
 		if rel != nil {
-			output, _ := xml.Marshal(rel.(*relationships))
+			rels := rel.(*relationships)
+			// keep the origin part bytes when the relationship list is not
+			// changed, so the saved file stays identical to the origin one
+			rels.mu.Lock()
+			unchanged := false
+			if content, ok := f.Pkg.Load(path.(string)); ok {
+				c := relationships{}
+				if err := xml.Unmarshal(namespaceStrictToTransitional(content.([]byte)), &c); err == nil {
+					unchanged = relationshipsEqual(rels.Relationships, c.Relationships)
+				}
+			}
+			rels.mu.Unlock()
+			if unchanged {
+				return true
+			}
+			output, _ := xml.Marshal(rels)
 			if strings.HasPrefix(path.(string), "ppt/slides/_rels/slide") {
 				output = f.replaceNameSpaceBytes(path.(string), output)
 			}
@@ -417,27 +498,32 @@ func (f *File) relsWriter() {
 	})
 }
 
+// relationshipsEqual reports whether the two relationship lists are equal.
+func relationshipsEqual(a, b []relationship) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // slideWriter provides a function to save ppt/slides/slide%d.xml after
 // serialize structure.
 func (f *File) slideWriter() {
 	newNonVisualGroupShapeProperties := func(
 		nvgsp *decodeNonVisualGroupShapeProperties,
 	) *NonVisualGroupShapeProperties {
+		if nvgsp == nil {
+			return nil
+		}
 		return &NonVisualGroupShapeProperties{
 			CommonNonVisualProperties:           nvgsp.CommonNonVisualProperties,
 			CommonNonVisualGroupShapeProperties: nvgsp.CommonNonVisualGroupShapeProperties,
 			NonVisualProperties:                 (*NonVisualProperties)(nvgsp.NonVisualProperties),
-		}
-	}
-
-	newGroupShapeProperties := func(c *decodeGroupShapeProperties) *GroupShapeProperties {
-		return &GroupShapeProperties{
-			Xfrm: &Xfrm{
-				Offset:       c.Xfrm.Offset,
-				Extents:      c.Xfrm.Extents,
-				ChildOffset:  c.Xfrm.ChildOffset,
-				ChildExtents: c.Xfrm.ChildExtents,
-			},
 		}
 	}
 
@@ -451,6 +537,15 @@ func (f *File) slideWriter() {
 			Extents:      dx.Extents,
 			ChildOffset:  dx.ChildOffset,
 			ChildExtents: dx.ChildExtents,
+		}
+	}
+
+	newGroupShapeProperties := func(c *decodeGroupShapeProperties) *GroupShapeProperties {
+		if c == nil {
+			return nil
+		}
+		return &GroupShapeProperties{
+			Xfrm: newXfrm(c.Xfrm),
 		}
 	}
 
@@ -475,26 +570,68 @@ func (f *File) slideWriter() {
 		}
 	}
 
+	newRunProperties := func(dr *DecodeRunProperties) *RunProperties {
+		if dr == nil {
+			return nil
+		}
+		rp := &RunProperties{
+			Bold:   dr.Bold,
+			Lang:   dr.Lang,
+			Size:   dr.Size,
+			Space:  dr.Space,
+			Strike: dr.Strike,
+			Latin:  dr.Latin,
+		}
+		if dr.SolidFill != nil {
+			rp.SolidFill = &SolidFill{
+				SolidRGBColor: dr.SolidFill.SolidRGBColor,
+			}
+		}
+		return rp
+	}
+
 	newRuns := func(r []DecodeRuns) []Runs {
 		runs := make([]Runs, len(r))
 		for i, run := range r {
 			runs[i] = Runs{
-				RunProperties: &RunProperties{
-					Bold:   run.RunProperties.Bold,
-					Lang:   run.RunProperties.Lang,
-					Size:   run.RunProperties.Size,
-					Space:  run.RunProperties.Space,
-					Strike: run.RunProperties.Strike,
-					SolidFill: &SolidFill{
-						SolidRGBColor: run.RunProperties.SolidFill.SolidRGBColor,
-					},
-					Latin: run.RunProperties.Latin,
-				},
-				Text: run.Text,
+				RunProperties: newRunProperties(run.RunProperties),
+				Text:          run.Text,
 			}
 		}
 
 		return runs
+	}
+
+	newParagraphProperties := func(dpp *DecodeParagraphProperties) *ParagraphProperties {
+		if dpp == nil {
+			return nil
+		}
+		var lineSpacing *LineSpacing
+		if dpp.LineSpacing != nil {
+			lineSpacing = &LineSpacing{
+				SpacingPercent: dpp.LineSpacing.SpacingPercent,
+			}
+		}
+		newSpacingChange := func(dsc *DecodeSpacingChange) *SpacingChange {
+			if dsc == nil {
+				return nil
+			}
+			return &SpacingChange{
+				SpacingPercent: dsc.SpacingPercent,
+				SpacingPts:     dsc.SpacingPts,
+			}
+		}
+		return &ParagraphProperties{
+			Indent:        dpp.Indent,
+			Lvl:           dpp.Lvl,
+			MarL:          dpp.MarL,
+			RTL:           dpp.RTL,
+			Align:         dpp.Align,
+			LineSpacing:   lineSpacing,
+			SpacingBefore: newSpacingChange(dpp.SpacingBefore),
+			SpacingAfter:  newSpacingChange(dpp.SpacingAfter),
+			BuNone:        dpp.BuNone,
+		}
 	}
 
 	newTextBody := func(dt *DecodeTextBody) *TextBody {
@@ -504,39 +641,33 @@ func (f *File) slideWriter() {
 
 		paragraphs := make([]Paragraph, len(dt.Paragraph))
 		for i, p := range dt.Paragraph {
-			var endParagraphRunProperties *RunProperties
-
-			if p.EndParagraphRunProperties != nil {
-				endParagraphRunProperties = &RunProperties{
-					Bold:   p.EndParagraphRunProperties.Bold,
-					Lang:   p.EndParagraphRunProperties.Lang,
-					Size:   p.EndParagraphRunProperties.Size,
-					Space:  p.EndParagraphRunProperties.Space,
-					Strike: p.EndParagraphRunProperties.Strike,
-					SolidFill: &SolidFill{
-						SolidRGBColor: p.EndParagraphRunProperties.SolidFill.SolidRGBColor,
-					},
-					Latin: p.EndParagraphRunProperties.Latin,
-				}
-			}
-
 			paragraphs[i] = Paragraph{
-				ParagraphProperties:       p.ParagraphProperties,
+				ParagraphProperties:       newParagraphProperties(p.ParagraphProperties),
 				Runs:                      newRuns(p.Runs),
-				EndParagraphRunProperties: endParagraphRunProperties,
+				EndParagraphRunProperties: newRunProperties(p.EndParagraphRunProperties),
+			}
+		}
+
+		var bodyProperties *BodyProperties
+		if dt.BodyProperties != nil {
+			bodyProperties = &BodyProperties{
+				AnchorCtr:        dt.BodyProperties.AnchorCtr,
+				Anchor:           dt.BodyProperties.Anchor,
+				BIns:             dt.BodyProperties.BIns,
+				LIns:             dt.BodyProperties.LIns,
+				SpcFirstLastPara: dt.BodyProperties.SpcFirstLastPara,
+				RIns:             dt.BodyProperties.RIns,
+				Wrap:             dt.BodyProperties.Wrap,
+				TIns:             dt.BodyProperties.TIns,
+				NormAutofit:      dt.BodyProperties.NormAutofit,
+				NoAutofit:        dt.BodyProperties.NoAutofit,
 			}
 		}
 
 		return &TextBody{
-			BodyProperties: &BodyProperties{
-				LIns:      dt.BodyProperties.LIns,
-				RIns:      dt.BodyProperties.RIns,
-				TIns:      dt.BodyProperties.TIns,
-				BIns:      dt.BodyProperties.BIns,
-				Anchor:    dt.BodyProperties.Anchor,
-				NoAutofit: dt.BodyProperties.NoAutofit,
-			},
-			Paragraph: paragraphs,
+			BodyProperties: bodyProperties,
+			ListStyle:      dt.ListStyle,
+			Paragraph:      paragraphs,
 		}
 	}
 
@@ -562,7 +693,7 @@ func (f *File) slideWriter() {
 		if dnsp.CommonNonVisualShapeProperties != nil {
 			commonNonVisualShapeProperties = &CommonNonVisualShapeProperties{
 				ShapeLocks: dnsp.CommonNonVisualShapeProperties.ShapeLocks,
-				TxBox:      dnsp.CommonNonVisualShapeProperties.TxBox,
+				TxBox:      boolToXMLBool(dnsp.CommonNonVisualShapeProperties.TxBox),
 			}
 		}
 
@@ -574,9 +705,9 @@ func (f *File) slideWriter() {
 		}
 
 		return &NonVisualShapeProperties{
-			CommonNonVisualProperties: dnsp.CommonNonVisualProperties,
+			CommonNonVisualProperties:      dnsp.CommonNonVisualProperties,
 			CommonNonVisualShapeProperties: commonNonVisualShapeProperties,
-			NonVisualProperties: nonVisualProperties,
+			NonVisualProperties:            nonVisualProperties,
 		}
 	}
 
@@ -586,6 +717,33 @@ func (f *File) slideWriter() {
 			ShapeProperties:          newShapeProperties(ds.ShapeProperties),
 			TextBody:                 newTextBody(ds.TextBody),
 		}
+	}
+
+	newPicture := func(dp decodePicture) Picture {
+		pic := Picture{}
+		if dp.NonVisualPictureProperties != nil {
+			pic.NonVisualPictureProperties = &NonVisualPictureProperties{
+				CommonNonVisualProperties:        dp.NonVisualPictureProperties.CommonNonVisualProperties,
+				CommonNonVisualPictureProperties: dp.NonVisualPictureProperties.CommonNonVisualPictureProperties,
+				NonVisualProperties:              (*NonVisualProperties)(dp.NonVisualPictureProperties.NonVisualProperties),
+			}
+		}
+		if dp.BlipFill != nil {
+			pic.BlipFill = &BlipFill{}
+			if dp.BlipFill.Blip != nil {
+				pic.BlipFill.Blip = &Blip{
+					Embed:       dp.BlipFill.Blip.Embed,
+					AlphaModFix: dp.BlipFill.Blip.AlphaModFix,
+				}
+			}
+			if dp.BlipFill.Stretch != nil && dp.BlipFill.Stretch.FillRect != nil {
+				pic.BlipFill.Stretch = &Stretch{
+					FillRect: dp.BlipFill.Stretch.FillRect,
+				}
+			}
+		}
+		pic.ShapeProperties = newShapeProperties(dp.ShapeProperties)
+		return pic
 	}
 
 	var (
@@ -602,6 +760,26 @@ func (f *File) slideWriter() {
 				shapes[i] = newShape(s)
 			}
 
+			pictures := make([]Picture, len(ds.CommonSlideData.ShapeTree.Picture))
+			for i, pic := range ds.CommonSlideData.ShapeTree.Picture {
+				pictures[i] = newPicture(pic)
+			}
+
+			var altContent *alternateContent
+			if ds.DecodeAlternateContent != nil {
+				altContent = &alternateContent{
+					Content: ds.DecodeAlternateContent.Content,
+					XMLNSMC: SourceRelationshipCompatibility.Value,
+				}
+			}
+
+			var clrMapOverride *ClrMapOverride
+			if ds.ColorMapOverride != nil {
+				clrMapOverride = &ClrMapOverride{
+					MasterClrMapping: ds.ColorMapOverride.MasterClrMapping,
+				}
+			}
+
 			output, _ := xml.Marshal(&Slide{
 				XMLName:  ds.XMLName,
 				XMLNSA:   NameSpaceDrawingML.Value,
@@ -615,12 +793,11 @@ func (f *File) slideWriter() {
 						NonVisualGroupShapeProperties: newNonVisualGroupShapeProperties(ds.CommonSlideData.ShapeTree.NonVisualGroupShapeProperties),
 						GroupShapeProperties:          newGroupShapeProperties(ds.CommonSlideData.ShapeTree.GroupShapeProperties),
 						Shape:                         shapes,
+						Picture:                       pictures,
 					},
 				},
-				AlternateContent: &alternateContent{
-					Content: ds.DecodeAlternateContent.Content,
-					XMLNSMC: SourceRelationshipCompatibility.Value,
-				},
+				ColorMapOverride: clrMapOverride,
+				AlternateContent: altContent,
 			})
 
 			f.saveFileList(p.(string), f.replaceNameSpaceBytes(p.(string), output))

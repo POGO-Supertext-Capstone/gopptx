@@ -170,6 +170,165 @@ func main() {
 }
 ```
 
+### Working with images
+
+Images in a presentation are stored as media parts in the `ppt/media` folder and
+are referenced from slides by relationships (the `r:embed` value of the picture
+blip). The following constitutes the bare to read and write images.
+
+```go
+package main
+
+import (
+    "fmt"
+
+    "github.com/kenny-not-dead/gopptx"
+)
+
+func main() {
+    f, err := gopptx.OpenFile("presentation.pptx")
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+    defer func() {
+        // Close the presentation.
+        if err := f.Close(); err != nil {
+            fmt.Println(err)
+        }
+    }()
+
+    // 256 is the slide id, get pictures (p:pic shapes) of the slide.
+    pictures, err := f.GetPictures(256)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    // Get the image data by the relationship id (r:embed) of the picture blip.
+    for _, picture := range pictures {
+        embed := picture.BlipFill.Blip.Embed
+        data, err := f.GetImage(256, embed)
+        if err != nil {
+            fmt.Println(err)
+            return
+        }
+        fmt.Println(embed, len(data))
+    }
+
+    // Replace the image data referenced by the relationship id, the media
+    // part is updated in place.
+    if err := f.SetImage(256, "rId3", newData); err != nil {
+        fmt.Println(err)
+        return
+    }
+}
+```
+
+### Add picture to presentation file
+
+```go
+package main
+
+import (
+    "fmt"
+
+    "github.com/kenny-not-dead/gopptx"
+)
+
+func main() {
+    f, err := gopptx.OpenFile("presentation.pptx")
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+    defer func() {
+        // Close the presentation.
+        if err := f.Close(); err != nil {
+            fmt.Println(err)
+        }
+    }()
+    // Insert a picture.
+    if _, err = f.AddImage(256, "image.png", nil); err != nil {
+        fmt.Println(err)
+    }
+    // Insert a picture to the slide with scaling.
+    if _, err = f.AddImage(256, "image.jpg",
+        &gopptx.PictureOptions{ScaleX: 0.5, ScaleY: 0.5}); err != nil {
+        fmt.Println(err)
+    }
+    // Insert a picture with the position on the slide.
+    if _, err = f.AddImage(256, "image.gif", &gopptx.PictureOptions{
+        Name:    "Logo",
+        OffsetX: 457200,
+        OffsetY: 381000,
+    }); err != nil {
+        fmt.Println(err)
+    }
+    // Save the presentation with the origin path.
+    if err = f.Save(); err != nil {
+        fmt.Println(err)
+    }
+}
+```
+
+The picture is centered on the slide and scaled to fit 80% of the slide
+size, keeping the aspect ratio of the image without upscaling, by default.
+Duplicate images are only actually stored once and the pictures that use it
+reference the same media part.
+
+### Delete picture from presentation file
+
+```go
+package main
+
+import (
+    "fmt"
+
+    "github.com/kenny-not-dead/gopptx"
+)
+
+func main() {
+    f, err := gopptx.OpenFile("presentation.pptx")
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+    defer func() {
+        // Close the presentation.
+        if err := f.Close(); err != nil {
+            fmt.Println(err)
+        }
+    }()
+    // Get pictures (p:pic shapes) of the slide 256.
+    pictures, err := f.GetPictures(256)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+    // Delete the picture by the slide id and the picture id (the id
+    // attribute of the p:cNvPr element).
+    for _, picture := range pictures {
+        id := picture.NonVisualPictureProperties.CommonNonVisualProperties.ID
+        if err := f.DeleteImage(256, id); err != nil {
+            fmt.Println(err)
+            return
+        }
+    }
+    // Save the presentation with the origin path.
+    if err = f.Save(); err != nil {
+        fmt.Println(err)
+    }
+}
+```
+
+The image relationship is removed from the slide rels part when no other
+shape of the slide uses it, and the media part is removed from the package
+when no other part of the presentation references it anymore.
+
+Supported image formats are JPEG, PNG, GIF, BMP, TIFF, WEBP, ICO, EMF, WMF and
+SVG.
+
 ## Contributing
 
 Contributions are welcome! Open a pull request to fix a bug, or open an issue to discuss a new feature or change. XML is compliant with [part 1 of the 5th edition of the ECMA-376 Standard for Office Open XML](https://www.ecma-international.org/publications-and-standards/standards/ecma-376/).

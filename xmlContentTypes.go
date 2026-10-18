@@ -25,13 +25,13 @@ type contentTypes struct {
 // contentTypeOverride directly maps the override element in the namespace
 // http://schemas.openxmlformats.org/package/2006/content-types
 type contentTypeOverride struct {
-	PartName    string `xml:",attr"`
 	ContentType string `xml:",attr"`
+	PartName    string `xml:",attr"`
 }
 
 // contentTypeDefault directly maps the default element in the namespace
 // http://schemas.openxmlformats.org/package/2006/content-types
 type contentTypeDefault struct {
-	Extension   string `xml:",attr"`
 	ContentType string `xml:",attr"`
+	Extension   string `xml:",attr"`
 }

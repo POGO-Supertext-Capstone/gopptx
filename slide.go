@@ -81,6 +81,12 @@ func (f *File) contentTypesReader() (*contentTypes, error) {
 			Decode(f.ContentTypes); err != nil && err != io.EOF {
 			return f.ContentTypes, err
 		}
+		// remember the default extensions declared in the origin content
+		// types part, the library must not remove them on image deletion
+		f.originalContentTypeExtensions = make([]string, 0, len(f.ContentTypes.Defaults))
+		for _, d := range f.ContentTypes.Defaults {
+			f.originalContentTypeExtensions = append(f.originalContentTypeExtensions, d.Extension)
+		}
 	}
 	return f.ContentTypes, nil
 }
@@ -218,7 +224,7 @@ func (f *File) CreateShape(slideID int, shapeProperties DecodeShapeProperties, t
 		return -1, err
 	}
 
-    shapes := slide.getShapes()
+	shapes := slide.getShapes()
 
 	shapeID := defaultXMLShapeID
 	for _, s := range shapes {
@@ -241,7 +247,7 @@ func (f *File) CreateShape(slideID int, shapeProperties DecodeShapeProperties, t
 
 	shapes = append(shapes, newShape)
 
-    slide.CommonSlideData.ShapeTree.Shape = shapes
+	slide.CommonSlideData.ShapeTree.Shape = shapes
 
 	return shapeID, nil
 }
@@ -253,7 +259,7 @@ func (f *File) DeleteShape(slideID int, shapeID int) error {
 		return err
 	}
 
-    shapes := slide.getShapes()
+	shapes := slide.getShapes()
 
 	deleteSlideIndex := -1
 	for i := range shapes {
@@ -272,7 +278,7 @@ func (f *File) DeleteShape(slideID int, shapeID int) error {
 	shapes = append(shapes[:deleteSlideIndex], shapes[deleteSlideIndex+1:]...)
 
 	slide.CommonSlideData.ShapeTree.Shape = shapes
-	
+
 	return nil
 }
 
