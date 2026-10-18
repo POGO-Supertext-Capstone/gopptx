@@ -24,24 +24,26 @@ import (
 
 // File define a populated slides file struct.
 type File struct {
-	mu            sync.Mutex
-	checked       sync.Map
-	zip64Entries  []string
-	options       *Options
-	tempFiles     sync.Map
-	slideMap      map[int]string
-	streams       map[string]*StreamWriter
-	xmlAttr       sync.Map
-	CharsetReader func(charset string, input io.Reader) (rdr io.Reader, err error)
-	ContentTypes  *contentTypes
-	Path          string
-	Pkg           sync.Map
-	Presentation  *decodePresentation
-	Relationships sync.Map
-	Slide         sync.Map
-	SlideCount    int
-	Theme         *decodeTheme
-	ZipWriter     func(io.Writer) ZipWriter
+	mu                            sync.Mutex
+	checked                       sync.Map
+	zip64Entries                  []string
+	options                       *Options
+	tempFiles                     sync.Map
+	slideMap                      map[int]string
+	streams                       map[string]*StreamWriter
+	xmlAttr                       sync.Map
+	xmlHeader                     sync.Map
+	originalContentTypeExtensions []string
+	CharsetReader                 func(charset string, input io.Reader) (rdr io.Reader, err error)
+	ContentTypes                  *contentTypes
+	Path                          string
+	Pkg                           sync.Map
+	Presentation                  *decodePresentation
+	Relationships                 sync.Map
+	Slide                         sync.Map
+	SlideCount                    int
+	Theme                         *decodeTheme
+	ZipWriter                     func(io.Writer) ZipWriter
 }
 
 // ZipWriter defines an interface for writing files to a ZIP archive. It

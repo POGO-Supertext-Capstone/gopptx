@@ -1,7 +1,11 @@
-/example
+example/
+
+test/Test*.pptx
+test/image1.*
 
 /coverage.txt
 /dist/
 /bin/
 *.exe
 *.test
+/vendor/

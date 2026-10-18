@@ -23,8 +23,8 @@ type relationships struct {
 // relationship contains relations which maps id and XML.
 type relationship struct {
 	ID         string `xml:"Id,attr"`
-	Target     string `xml:",attr"`
 	Type       string `xml:",attr"`
+	Target     string `xml:",attr"`
 	TargetMode string `xml:",attr,omitempty"`
 }
 
@@ -40,14 +40,28 @@ type presentation struct {
 	AlternateContent       *alternateContent `xml:"mc:AlternateContent"`
 	DecodeAlternateContent *innerXML         `xml:"http://schemas.openxmlformats.org/markup-compatibility/2006 AlternateContent"`
 	MasterSlide            masterSlideList   `xml:"p:sldMasterIdLst"`
+	NotesMaster            *notesMasterList  `xml:"p:notesMasterIdLst,omitempty"`
 	Slides                 *slideList        `xml:"p:sldIdLst,omitempty"`
 	SlideSize              *slideSize        `xml:"p:sldSz,omitempty"`
-	NotesSize              *slideSize        `xml:"p:notesSz,omitempty"`
+	NotesSize              *notesSize        `xml:"p:notesSz,omitempty"`
+	DefaultTextStyle       *innerXML         `xml:"p:defaultTextStyle"`
+	ExtList                *innerXML         `xml:"p:extLst"`
 }
 
 // TODO
 type masterSlideList struct {
 	MasterSlide slideID `xml:"p:sldMasterId"`
+}
+
+// notesMasterList defines the notes master id list (p:notesMasterIdLst)
+// element of the presentation.
+type notesMasterList struct {
+	NotesMaster notesMasterID `xml:"p:notesMasterId"`
+}
+
+// notesMasterID defines a notes master in this presentation.
+type notesMasterID struct {
+	RelationshipID string `xml:"r:id,attr"`
 }
 
 // TODO
@@ -57,8 +71,8 @@ type slideList struct {
 
 // TODO
 type slideID struct {
-	RelationshipID string `xml:"r:id,attr"`
 	SlideID        int    `xml:"id,attr"`
+	RelationshipID string `xml:"r:id,attr"`
 }
 
 // decodePresentation contains elements and attributes that encompass the data
@@ -68,13 +82,27 @@ type decodePresentation struct {
 	AlternateContent       *alternateContent     `xml:"mc:AlternateContent"`
 	DecodeAlternateContent *innerXML             `xml:"http://schemas.openxmlformats.org/markup-compatibility/2006 AlternateContent"`
 	MasterSlide            decodeMasterSlideList `xml:"sldMasterIdLst"`
+	NotesMaster            decodeNotesMasterList `xml:"notesMasterIdLst,omitempty"`
 	Slides                 *decodeSlideList      `xml:"sldIdLst,omitempty"`
 	SlideSize              *slideSize            `xml:"sldSz,omitempty"`
-	NotesSize              *slideSize            `xml:"notesSz,omitempty"`
+	NotesSize              *notesSize            `xml:"notesSz,omitempty"`
+	DefaultTextStyle       *innerXML             `xml:"defaultTextStyle"`
+	ExtList                *innerXML             `xml:"extLst"`
 }
 
 type decodeMasterSlideList struct {
 	MasterSlide decodeSlideID `xml:"sldMasterId"`
+}
+
+// decodeNotesMasterList defines the notes master id list (notesMasterIdLst)
+// element of the presentation.
+type decodeNotesMasterList struct {
+	NotesMaster decodeNotesMasterID `xml:"notesMasterId"`
+}
+
+// decodeNotesMasterID defines a notes master in this presentation.
+type decodeNotesMasterID struct {
+	RelationshipID string `xml:"http://schemas.openxmlformats.org/officeDocument/2006/relationships id,attr"`
 }
 
 type decodeSlideList struct {
@@ -89,6 +117,11 @@ type decodeSlideID struct {
 }
 
 type slideSize struct {
+	CY int `xml:"cy,attr"`
+	CX int `xml:"cx,attr"`
+}
+
+type notesSize struct {
 	CX int `xml:"cx,attr"`
 	CY int `xml:"cy,attr"`
 }

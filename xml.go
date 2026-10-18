@@ -39,6 +39,7 @@ const (
 	NameSpaceExtendedProperties                   = "http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"
 	NameSpaceXML                                  = "http://www.w3.org/XML/1998/namespace"
 	SourceRelationshipCustomProperties            = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties"
+	SourceRelationshipImage                       = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
 	SourceRelationshipOfficeDocument              = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
 	SourceRelationshipSlide                       = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
 	StrictNameSpaceDocumentPropertiesVariantTypes = "http://purl.oclc.org/ooxml/officeDocument/docPropsVTypes"
@@ -86,14 +87,33 @@ var supportedContentTypes = map[string]string{
 	".pptx": ContentTypePresentationML,
 }
 
-const (
-	templateNamespaceIDMap = ` xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" xmlns:p15="http://schemas.microsoft.com/office/powerpoint/2012/main"`
-	templatePPTXNamespace  = ` xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="p14" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main"`
-)
-
 // innerXML holds parts of XML content currently not unmarshal.
 type innerXML struct {
 	Content string `xml:",innerxml"`
+}
+
+// XMLBool is a boolean type that is marshaled to and unmarshaled from XML
+// using the values "1" and "0", as required by the Office Open XML format.
+type XMLBool bool
+
+// MarshalXMLAttr provides a function to marshal the attribute with the given
+// name.
+func (b XMLBool) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
+	val := "0"
+	if b {
+		val = "1"
+	}
+	return xml.Attr{Name: name, Value: val}, nil
+}
+
+// boolToXMLBool provides a function to convert a pointer to bool to a
+// pointer to XMLBool.
+func boolToXMLBool(b *bool) *XMLBool {
+	if b == nil {
+		return nil
+	}
+	v := XMLBool(*b)
+	return &v
 }
 
 // alternateContent is a container for a sequence of multiple
