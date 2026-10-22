@@ -103,7 +103,9 @@ func (f *File) setSlide(index int, id int) error {
 	}
 
 	f.Slide.Store(slideXMLPath, &slide)
-	f.xmlAttr.Store(slideXMLPath, []xml.Attr{NameSpacePresentationML}) // TODO: check attr
+	// capture the origin root element attributes of the slide template, so
+	// the new slide keeps the template namespaces on save
+	f.xmlAttr.Store(slideXMLPath, getRootElement(f.xmlNewDecoder(bytes.NewReader([]byte(TemplateSlide)))))
 
 	relsSlideXMLPath := "ppt/slides/_rels/slide" + strconv.Itoa(index) + ".xml.rels"
 	f.Pkg.Store(relsSlideXMLPath, []byte(xml.Header+TemplateSlideRels))
@@ -216,6 +218,124 @@ func (f *File) SetShapeTextBody(slideID int, shapeID int, textBody DecodeTextBod
 	return ErrShapeNotExist{shapeID}
 }
 
+// SetSlideBackground provides a function to set the slide background by given
+// slide id, replacing the current background of the slide.
+func (f *File) SetSlideBackground(slideID int, background DecodeBackground) error {
+	slide, err := f.slideReader(slideID)
+	if err != nil {
+		return err
+	}
+
+	slide.CommonSlideData.Background = &background
+
+	return nil
+}
+
+// GetSlideBackground provides a function to get the slide background by given
+// slide id. It returns nil when the slide has no explicit background and
+// inherits it from the slide layout or the slide master.
+func (f *File) GetSlideBackground(slideID int) (*DecodeBackground, error) {
+	slide, err := f.slideReader(slideID)
+	if err != nil {
+		return nil, err
+	}
+
+	return slide.CommonSlideData.Background, nil
+}
+
+// DeleteSlideBackground provides a function to delete the slide background by
+// given slide id, so the slide inherits the background from the slide layout
+// or the slide master.
+func (f *File) DeleteSlideBackground(slideID int) error {
+	slide, err := f.slideReader(slideID)
+	if err != nil {
+		return err
+	}
+
+	slide.CommonSlideData.Background = nil
+
+	return nil
+}
+
+// SetShapeFill provides a function to set the solid fill of the shape by
+// given shape id, replacing the current fill of the shape.
+func (f *File) SetShapeFill(slideID int, shapeID int, fill DecodeSolidFill) error {
+	slide, err := f.slideReader(slideID)
+	if err != nil {
+		return err
+	}
+
+	for i := range slide.CommonSlideData.ShapeTree.Shape {
+		shape := &slide.CommonSlideData.ShapeTree.Shape[i]
+		if shape.NonVisualShapeProperties == nil ||
+			shape.NonVisualShapeProperties.CommonNonVisualProperties == nil ||
+			shape.NonVisualShapeProperties.CommonNonVisualProperties.ID != shapeID {
+			continue
+		}
+		if shape.ShapeProperties == nil {
+			shape.ShapeProperties = &DecodeShapeProperties{}
+		}
+		shape.ShapeProperties.NoFill = nil
+		shape.ShapeProperties.SolidFill = &fill
+
+		return nil
+	}
+
+	return ErrShapeNotExist{shapeID}
+}
+
+// GetShapeFill provides a function to get the solid fill of the shape by
+// given shape id. It returns nil when the shape has no solid fill.
+func (f *File) GetShapeFill(slideID int, shapeID int) (*DecodeSolidFill, error) {
+	slide, err := f.slideReader(slideID)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range slide.CommonSlideData.ShapeTree.Shape {
+		shape := &slide.CommonSlideData.ShapeTree.Shape[i]
+		if shape.NonVisualShapeProperties == nil ||
+			shape.NonVisualShapeProperties.CommonNonVisualProperties == nil ||
+			shape.NonVisualShapeProperties.CommonNonVisualProperties.ID != shapeID {
+			continue
+		}
+		if shape.ShapeProperties == nil {
+			return nil, nil
+		}
+
+		return shape.ShapeProperties.SolidFill, nil
+	}
+
+	return nil, ErrShapeNotExist{shapeID}
+}
+
+// DeleteShapeFill provides a function to delete the fill of the shape by
+// given shape id, setting the noFill property of the shape instead.
+func (f *File) DeleteShapeFill(slideID int, shapeID int) error {
+	slide, err := f.slideReader(slideID)
+	if err != nil {
+		return err
+	}
+
+	for i := range slide.CommonSlideData.ShapeTree.Shape {
+		shape := &slide.CommonSlideData.ShapeTree.Shape[i]
+		if shape.NonVisualShapeProperties == nil ||
+			shape.NonVisualShapeProperties.CommonNonVisualProperties == nil ||
+			shape.NonVisualShapeProperties.CommonNonVisualProperties.ID != shapeID {
+			continue
+		}
+		if shape.ShapeProperties == nil {
+			shape.ShapeProperties = &DecodeShapeProperties{}
+		}
+		shape.ShapeProperties.NoFill = &noFill{}
+		shape.ShapeProperties.SolidFill = nil
+
+		return nil
+	}
+
+	return ErrShapeNotExist{shapeID}
+}
+
 // CreateShape provides the function to create  a new shape by given slide id and
 // returns the id of the shape in the slide after it appended.
 func (f *File) CreateShape(slideID int, shapeProperties DecodeShapeProperties, textBody DecodeTextBody) (int, error) {
@@ -226,20 +346,25 @@ func (f *File) CreateShape(slideID int, shapeProperties DecodeShapeProperties, t
 
 	shapes := slide.getShapes()
 
-	shapeID := defaultXMLShapeID
-	for _, s := range shapes {
-		if s.NonVisualShapeProperties != nil && s.NonVisualShapeProperties.CommonNonVisualProperties != nil {
-			shapeID = max(shapeID, s.NonVisualShapeProperties.CommonNonVisualProperties.ID)
-		}
-	}
+	// the shape id must be unique in the whole shape tree (sp + pic), the
+	// same way AddImage allocates picture ids
+	shapeID := f.nextShapeID(slide)
 
-	shapeID++
+	// the body properties element is required in the text body by the schema
+	if textBody.BodyProperties == nil {
+		textBody.BodyProperties = &DecodeBodyProperties{}
+	}
 
 	newShape := decodeShape{
 		NonVisualShapeProperties: &decodeNonVisualShapeProperties{
 			CommonNonVisualProperties: &CommonNonVisualProperties{
 				ID: shapeID,
 			},
+			// the shape non-visual properties and the non-visual properties
+			// elements are expected by the consumers (PowerPoint writes them
+			// for every shape, python-pptx requires the former)
+			CommonNonVisualShapeProperties: &decodeCommonNonVisualShapeProperties{},
+			NonVisualProperties:            &decodeNonVisualProperties{},
 		},
 		ShapeProperties: &shapeProperties,
 		TextBody:        &textBody,

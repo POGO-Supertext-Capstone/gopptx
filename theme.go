@@ -9,6 +9,7 @@ package gopptx
 
 import (
 	"bytes"
+	"encoding/xml"
 	"io"
 )
 
@@ -19,7 +20,23 @@ func (f *File) themeReader() (*decodeTheme, error) {
 		return nil, nil
 	}
 	theme := decodeTheme{}
-	if err := f.xmlNewDecoder(bytes.NewReader(namespaceStrictToTransitional(f.readXML(defaultXMLPathTheme)))).
+	data := namespaceStrictToTransitional(f.readXML(defaultXMLPathTheme))
+	// capture the origin root element attributes, so the serialized theme
+	// keeps its origin root element on save
+	if _, ok := f.xmlAttr.Load(defaultXMLPathTheme); !ok {
+		d := f.xmlNewDecoder(bytes.NewReader(data))
+		for {
+			token, err := d.Token()
+			if err != nil {
+				break
+			}
+			if startElement, ok := token.(xml.StartElement); ok {
+				f.xmlAttr.Store(defaultXMLPathTheme, startElement.Attr)
+				break
+			}
+		}
+	}
+	if err := f.xmlNewDecoder(bytes.NewReader(data)).
 		Decode(&theme); err != nil && err != io.EOF {
 		return &theme, err
 	}

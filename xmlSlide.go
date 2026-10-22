@@ -28,7 +28,20 @@ type Slide struct {
 }
 
 type SlideData struct {
-	ShapeTree ShapeTree `xml:"p:spTree"`
+	Background *bg       `xml:"p:bg,omitempty"`
+	ShapeTree  ShapeTree `xml:"p:spTree"`
+}
+
+// bg defines the slide background (p:bg) element of the common slide data.
+type bg struct {
+	BGProperties *bgProperties `xml:"p:bgPr,omitempty"`
+}
+
+// bgProperties defines the background properties (p:bgPr) element.
+type bgProperties struct {
+	NoFill     *noFill    `xml:"a:noFill,omitempty"`
+	SolidFill  *SolidFill `xml:"a:solidFill,omitempty"`
+	EffectList *struct{}  `xml:"a:effectLst,omitempty"`
 }
 
 type ShapeTree struct {
@@ -143,6 +156,7 @@ type ShapeProperties struct {
 	Xfrm           *Xfrm           `xml:"a:xfrm"`
 	PresetGeometry *PresetGeometry `xml:"a:prstGeom,omitempty"`
 	NoFill         *noFill         `xml:"a:noFill,omitempty"`
+	SolidFill      *SolidFill      `xml:"a:solidFill,omitempty"`
 	Ln             *Line           `xml:"a:ln,omitempty"`
 }
 
@@ -152,8 +166,9 @@ type PresetGeometry struct {
 }
 
 type Line struct {
-	Width  *int    `xml:"w,attr,omitempty"`
-	NoFill *noFill `xml:"a:noFill,omitempty"`
+	Width     *int       `xml:"w,attr,omitempty"`
+	NoFill    *noFill    `xml:"a:noFill,omitempty"`
+	SolidFill *SolidFill `xml:"a:solidFill,omitempty"`
 }
 
 type TextBody struct {
@@ -191,15 +206,16 @@ type Paragraph struct {
 // ParagraphProperties defines the paragraph properties (a:pPr) element of
 // the paragraph.
 type ParagraphProperties struct {
-	Indent        *int           `xml:"indent,attr,omitempty"`
-	Lvl           *int           `xml:"lvl,attr,omitempty"`
-	MarL          *int           `xml:"marL,attr,omitempty"`
-	RTL           *int           `xml:"rtl,attr,omitempty"`
-	Align         *string        `xml:"algn,attr,omitempty"`
-	LineSpacing   *LineSpacing   `xml:"a:lnSpc,omitempty"`
-	SpacingBefore *SpacingChange `xml:"a:spcBef,omitempty"`
-	SpacingAfter  *SpacingChange `xml:"a:spcAft,omitempty"`
-	BuNone        *struct{}      `xml:"a:buNone,omitempty"`
+	Indent           *int           `xml:"indent,attr,omitempty"`
+	Lvl              *int           `xml:"lvl,attr,omitempty"`
+	MarL             *int           `xml:"marL,attr,omitempty"`
+	RTL              *int           `xml:"rtl,attr,omitempty"`
+	Align            *string        `xml:"algn,attr,omitempty"`
+	LineSpacing      *LineSpacing   `xml:"a:lnSpc,omitempty"`
+	SpacingBefore    *SpacingChange `xml:"a:spcBef,omitempty"`
+	SpacingAfter     *SpacingChange `xml:"a:spcAft,omitempty"`
+	BuNone           *struct{}      `xml:"a:buNone,omitempty"`
+	DefRunProperties *RunProperties `xml:"a:defRPr,omitempty"`
 }
 
 // SpacingChange defines the spacing before (a:spcBef) or spacing after
@@ -215,13 +231,15 @@ type Runs struct {
 }
 
 type RunProperties struct {
-	Bold      *int       `xml:"b,attr,omitempty"`
-	Lang      string     `xml:"lang,attr,omitempty"`
-	Size      *int       `xml:"sz,attr,omitempty"`
-	Space     *int       `xml:"spc,attr,omitempty"`
-	Strike    string     `xml:"strike,attr,omitempty"`
-	SolidFill *SolidFill `xml:"a:solidFill,omitempty"`
-	Latin     *Latin     `xml:"a:latin,omitempty"`
+	Bold          *int       `xml:"b,attr,omitempty"`
+	Lang          string     `xml:"lang,attr,omitempty"`
+	Size          *int       `xml:"sz,attr,omitempty"`
+	Space         *int       `xml:"spc,attr,omitempty"`
+	Strike        string     `xml:"strike,attr,omitempty"`
+	SolidFill     *SolidFill `xml:"a:solidFill,omitempty"`
+	Latin         *Font      `xml:"a:latin,omitempty"`
+	EastAsian     *Font      `xml:"a:ea,omitempty"`
+	ComplexScript *Font      `xml:"a:cs,omitempty"`
 }
 type SolidFill struct {
 	SolidRGBColor *SolidRGBColor `xml:"a:srgbClr"`
@@ -242,7 +260,20 @@ type decodeClrMapOverride struct {
 }
 
 type decodeSlideData struct {
-	ShapeTree decodeShapeTree `xml:"spTree"`
+	Background *DecodeBackground `xml:"bg,omitempty"`
+	ShapeTree  decodeShapeTree   `xml:"spTree"`
+}
+
+// DecodeBackground directly maps the bg element of the slide.
+type DecodeBackground struct {
+	BGProperties *DecodeBGProperties `xml:"bgPr,omitempty"`
+}
+
+// DecodeBGProperties directly maps the bgPr element of the slide background.
+type DecodeBGProperties struct {
+	NoFill     *noFill          `xml:"noFill,omitempty"`
+	SolidFill  *DecodeSolidFill `xml:"solidFill,omitempty"`
+	EffectList *struct{}        `xml:"effectLst,omitempty"`
 }
 
 type decodeShapeTree struct {
@@ -353,6 +384,7 @@ type DecodeShapeProperties struct {
 	Xfrm           *DecodeXfrm           `xml:"xfrm"`
 	PresetGeometry *DecodePresetGeometry `xml:"prstGeom,omitempty"`
 	NoFill         *noFill               `xml:"noFill,omitempty"`
+	SolidFill      *DecodeSolidFill      `xml:"solidFill,omitempty"`
 	Ln             *decodeLine           `xml:"ln,omitempty"`
 }
 
@@ -372,8 +404,9 @@ type AdjustValue struct {
 }
 
 type decodeLine struct {
-	Width  *int    `xml:"w,attr,omitempty"`
-	NoFill *noFill `xml:"noFill,omitempty"`
+	Width     *int             `xml:"w,attr,omitempty"`
+	NoFill    *noFill          `xml:"noFill,omitempty"`
+	SolidFill *DecodeSolidFill `xml:"solidFill,omitempty"`
 }
 
 type DecodeTextBody struct {
@@ -405,15 +438,16 @@ type DecodeParagraph struct {
 
 // DecodeParagraphProperties directly maps the pPr element of the paragraph.
 type DecodeParagraphProperties struct {
-	Indent        *int                 `xml:"indent,attr,omitempty"`
-	Lvl           *int                 `xml:"lvl,attr,omitempty"`
-	MarL          *int                 `xml:"marL,attr,omitempty"`
-	RTL           *int                 `xml:"rtl,attr,omitempty"`
-	Align         *string              `xml:"algn,attr,omitempty"`
-	LineSpacing   *DecodeLineSpacing   `xml:"lnSpc,omitempty"`
-	SpacingBefore *DecodeSpacingChange `xml:"spcBef,omitempty"`
-	SpacingAfter  *DecodeSpacingChange `xml:"spcAft,omitempty"`
-	BuNone        *struct{}            `xml:"buNone,omitempty"`
+	Indent           *int                 `xml:"indent,attr,omitempty"`
+	Lvl              *int                 `xml:"lvl,attr,omitempty"`
+	MarL             *int                 `xml:"marL,attr,omitempty"`
+	RTL              *int                 `xml:"rtl,attr,omitempty"`
+	Align            *string              `xml:"algn,attr,omitempty"`
+	LineSpacing      *DecodeLineSpacing   `xml:"lnSpc,omitempty"`
+	SpacingBefore    *DecodeSpacingChange `xml:"spcBef,omitempty"`
+	SpacingAfter     *DecodeSpacingChange `xml:"spcAft,omitempty"`
+	BuNone           *struct{}            `xml:"buNone,omitempty"`
+	DefRunProperties *DecodeRunProperties `xml:"defRPr,omitempty"`
 }
 
 // DecodeLineSpacing directly maps the lnSpc element of the paragraph
@@ -448,13 +482,15 @@ type DecodeRuns struct {
 }
 
 type DecodeRunProperties struct {
-	Bold      *int             `xml:"b,attr,omitempty"`
-	Lang      string           `xml:"lang,attr,omitempty"`
-	Size      *int             `xml:"sz,attr,omitempty"`
-	Space     *int             `xml:"spc,attr,omitempty"`
-	Strike    string           `xml:"strike,attr,omitempty"`
-	SolidFill *DecodeSolidFill `xml:"solidFill,omitempty"`
-	Latin     *Latin           `xml:"latin,omitempty"`
+	Bold          *int             `xml:"b,attr,omitempty"`
+	Lang          string           `xml:"lang,attr,omitempty"`
+	Size          *int             `xml:"sz,attr,omitempty"`
+	Space         *int             `xml:"spc,attr,omitempty"`
+	Strike        string           `xml:"strike,attr,omitempty"`
+	SolidFill     *DecodeSolidFill `xml:"solidFill,omitempty"`
+	Latin         *Font            `xml:"latin,omitempty"`
+	EastAsian     *Font            `xml:"ea,omitempty"`
+	ComplexScript *Font            `xml:"cs,omitempty"`
 }
 
 type DecodeSolidFill struct {
@@ -465,6 +501,8 @@ type SolidRGBColor struct {
 	Val string `xml:"val,attr"`
 }
 
-type Latin struct {
+// Font defines a font typeface element (a:latin, a:ea or a:cs) of the run
+// properties.
+type Font struct {
 	Typeface string `xml:"typeface,attr"`
 }

@@ -200,10 +200,13 @@ func (f *File) AddImageFromBytes(slideID int, data []byte, opts *PictureOptions)
 	partName := f.addImageMedia(data, ext)
 
 	slidePath, _ := f.getSlideXMLPath(slideID)
+	// the picture shape references the image relationship (r:embed), so the
+	// slide root element must declare the relationships namespace
+	f.addNameSpaces(slidePath, SourceRelationship)
 	target := "../" + strings.TrimPrefix(partName, "ppt/")
 	rID := f.addRels(f.getSlideRelsPath(slidePath), SourceRelationshipImage, target, "")
 
-	pictureID := f.nextPictureID(slide)
+	pictureID := f.nextShapeID(slide)
 	offset, extents := f.pictureLayout(data, opts)
 	name := fmt.Sprintf("Picture %d", pictureID)
 	if opts != nil && opts.Name != "" {
@@ -522,9 +525,9 @@ func (f *File) ensureImageContentType(ext, contentType string) error {
 	return nil
 }
 
-// nextPictureID provides a function to get the next free picture (shape) id
-// in the slide.
-func (f *File) nextPictureID(slide *decodeSlide) int {
+// nextShapeID provides a function to get the next free shape id in the slide
+// shape tree, taking into account all the shape types (sp, pic).
+func (f *File) nextShapeID(slide *decodeSlide) int {
 	id := defaultXMLShapeID
 	for _, s := range slide.getShapes() {
 		if s.NonVisualShapeProperties != nil && s.NonVisualShapeProperties.CommonNonVisualProperties != nil {

@@ -193,6 +193,9 @@ func xmlDeclaration(content []byte) []byte {
 	end := idx + 2
 	if end < len(content) && (content[end] == '\r' || content[end] == '\n') {
 		end++
+		if end < len(content) && content[end] == '\n' {
+			end++
+		}
 	}
 	return content[:end]
 }
