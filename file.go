@@ -346,8 +346,9 @@ func replaceRelationshipsBytes(content []byte) []byte {
 // replaceNameSpaceBytes provides a function to replace the XML root element
 // attributes by the given component part path and XML content. The original
 // root element attributes (namespaces and other attributes) captured while
-// reading the part are restored, so the serialized part keeps its origin root
-// element.
+// reading the part are restored as is, so the serialized part keeps its
+// origin root element. A namespace is added to the restored root element by
+// the addNameSpaces function only when a library feature needs it.
 func (f *File) replaceNameSpaceBytes(path string, content []byte) []byte {
 	attrs, ok := f.xmlAttr.Load(path)
 	if !ok {
@@ -356,25 +357,6 @@ func (f *File) replaceNameSpaceBytes(path string, content []byte) []byte {
 	attrList := attrs.([]xml.Attr)
 	if len(attrList) == 0 {
 		return content
-	}
-	// ensure that every namespace prefix used by the serialized content is
-	// declared in the restored root element attributes
-	merged := make([]xml.Attr, 0, len(attrList)+6)
-	merged = append(merged, attrList...)
-	for _, ns := range []xml.Attr{
-		NameSpaceDrawingML, NameSpacePresentationML, SourceRelationship,
-		NameSpacePowerPointR14, NameSpacePowerPointR15, SourceRelationshipCompatibility,
-	} {
-		exists := false
-		for _, attr := range merged {
-			if attr.Name == ns.Name {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			merged = append(merged, ns)
-		}
 	}
 	idx := bytes.IndexByte(content, '>')
 	if idx == -1 {
@@ -387,7 +369,7 @@ func (f *File) replaceNameSpaceBytes(path string, content []byte) []byte {
 	result := make([]byte, 0, len(content))
 	result = append(result, content[:nameEnd+1]...)
 	result = append(result, ' ')
-	result = append(result, genXMLNamespace(merged)...)
+	result = append(result, genXMLNamespace(attrList)...)
 	result = append(result, content[idx+1:]...)
 	return result
 }
@@ -464,6 +446,8 @@ func (f *File) themeWriter() {
 					BgFillStyleList: f.Theme.ThemeElements.FormatScheme.BgFillStyleList,
 				},
 			},
+			ObjectDefaults:    f.Theme.ObjectDefaults,
+			ExtraClrSchemeLst: f.Theme.ExtraClrSchemeLst,
 		})
 		f.saveFileList(defaultXMLPathTheme, f.replaceNameSpaceBytes(defaultXMLPathTheme, output))
 	}
@@ -560,13 +544,24 @@ func (f *File) slideWriter() {
 		}
 	}
 
+	newSolidFill := func(dsf *DecodeSolidFill) *SolidFill {
+		if dsf == nil {
+			return nil
+		}
+
+		return &SolidFill{
+			SolidRGBColor: dsf.SolidRGBColor,
+		}
+	}
+
 	newLine := func(dl *decodeLine) *Line {
 		if dl == nil {
 			return nil
 		}
 		return &Line{
-			Width:  dl.Width,
-			NoFill: dl.NoFill,
+			Width:     dl.Width,
+			NoFill:    dl.NoFill,
+			SolidFill: newSolidFill(dl.SolidFill),
 		}
 	}
 
@@ -575,12 +570,14 @@ func (f *File) slideWriter() {
 			return nil
 		}
 		rp := &RunProperties{
-			Bold:   dr.Bold,
-			Lang:   dr.Lang,
-			Size:   dr.Size,
-			Space:  dr.Space,
-			Strike: dr.Strike,
-			Latin:  dr.Latin,
+			Bold:          dr.Bold,
+			Lang:          dr.Lang,
+			Size:          dr.Size,
+			Space:         dr.Space,
+			Strike:        dr.Strike,
+			Latin:         dr.Latin,
+			EastAsian:     dr.EastAsian,
+			ComplexScript: dr.ComplexScript,
 		}
 		if dr.SolidFill != nil {
 			rp.SolidFill = &SolidFill{
@@ -622,15 +619,16 @@ func (f *File) slideWriter() {
 			}
 		}
 		return &ParagraphProperties{
-			Indent:        dpp.Indent,
-			Lvl:           dpp.Lvl,
-			MarL:          dpp.MarL,
-			RTL:           dpp.RTL,
-			Align:         dpp.Align,
-			LineSpacing:   lineSpacing,
-			SpacingBefore: newSpacingChange(dpp.SpacingBefore),
-			SpacingAfter:  newSpacingChange(dpp.SpacingAfter),
-			BuNone:        dpp.BuNone,
+			Indent:           dpp.Indent,
+			Lvl:              dpp.Lvl,
+			MarL:             dpp.MarL,
+			RTL:              dpp.RTL,
+			Align:            dpp.Align,
+			LineSpacing:      lineSpacing,
+			SpacingBefore:    newSpacingChange(dpp.SpacingBefore),
+			SpacingAfter:     newSpacingChange(dpp.SpacingAfter),
+			BuNone:           dpp.BuNone,
+			DefRunProperties: newRunProperties(dpp.DefRunProperties),
 		}
 	}
 
@@ -680,6 +678,7 @@ func (f *File) slideWriter() {
 			Xfrm:           newXfrm(dsp.Xfrm),
 			PresetGeometry: newPresetGeometry(dsp.PresetGeometry),
 			NoFill:         dsp.NoFill,
+			SolidFill:      newSolidFill(dsp.SolidFill),
 			Ln:             newLine(dsp.Ln),
 		}
 	}
@@ -746,6 +745,23 @@ func (f *File) slideWriter() {
 		return pic
 	}
 
+	newBG := func(db *DecodeBackground) *bg {
+		if db == nil {
+			return nil
+		}
+
+		var bgProps *bgProperties
+		if db.BGProperties != nil {
+			bgProps = &bgProperties{
+				NoFill:     db.BGProperties.NoFill,
+				SolidFill:  newSolidFill(db.BGProperties.SolidFill),
+				EffectList: db.BGProperties.EffectList,
+			}
+		}
+
+		return &bg{BGProperties: bgProps}
+	}
+
 	var (
 		arr    []byte
 		buffer = bytes.NewBuffer(arr)
@@ -789,6 +805,7 @@ func (f *File) slideWriter() {
 				XMLNSP15: NameSpacePowerPointR15.Value,
 				XMLNSMC:  SourceRelationshipCompatibility.Value,
 				CommonSlideData: SlideData{
+					Background: newBG(ds.CommonSlideData.Background),
 					ShapeTree: ShapeTree{
 						NonVisualGroupShapeProperties: newNonVisualGroupShapeProperties(ds.CommonSlideData.ShapeTree.NonVisualGroupShapeProperties),
 						GroupShapeProperties:          newGroupShapeProperties(ds.CommonSlideData.ShapeTree.GroupShapeProperties),
