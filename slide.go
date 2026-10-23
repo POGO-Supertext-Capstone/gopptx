@@ -357,7 +357,7 @@ func (f *File) CreateShape(slideID int, shapeProperties DecodeShapeProperties, t
 
 	newShape := decodeShape{
 		NonVisualShapeProperties: &decodeNonVisualShapeProperties{
-			CommonNonVisualProperties: &CommonNonVisualProperties{
+			CommonNonVisualProperties: &decodeCommonNonVisualProperties{
 				ID: shapeID,
 			},
 			// the shape non-visual properties and the non-visual properties

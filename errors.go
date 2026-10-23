@@ -76,6 +76,16 @@ func (err ErrPictureNotExist) Error() string {
 	return fmt.Sprintf("picture %d does not exist", err.PictureID)
 }
 
+// ErrConnectorNotExist defined an error of connector that does not exist.
+type ErrConnectorNotExist struct {
+	ConnectorID int
+}
+
+// Error returns the error message on receiving the non existing connector.
+func (err ErrConnectorNotExist) Error() string {
+	return fmt.Sprintf("connector %d does not exist", err.ConnectorID)
+}
+
 // ErrImageNotExist defined an error of image relationship that does not exist.
 type ErrImageNotExist struct {
 	RelationshipID string

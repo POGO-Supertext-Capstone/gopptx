@@ -216,7 +216,7 @@ func (f *File) AddImageFromBytes(slideID int, data []byte, opts *PictureOptions)
 
 	picture := decodePicture{
 		NonVisualPictureProperties: &decodeNonVisualPictureProperties{
-			CommonNonVisualProperties: &CommonNonVisualProperties{
+			CommonNonVisualProperties: &decodeCommonNonVisualProperties{
 				ID:   pictureID,
 				Name: name,
 			},
@@ -242,7 +242,7 @@ func (f *File) AddImageFromBytes(slideID int, data []byte, opts *PictureOptions)
 				Preset: "rect",
 			},
 			NoFill: &noFill{},
-			Ln:     &decodeLine{NoFill: &noFill{}},
+			Ln:     &DecodeLine{NoFill: &noFill{}},
 		},
 	}
 
@@ -526,7 +526,7 @@ func (f *File) ensureImageContentType(ext, contentType string) error {
 }
 
 // nextShapeID provides a function to get the next free shape id in the slide
-// shape tree, taking into account all the shape types (sp, pic).
+// shape tree, taking into account all the shape types (sp, pic, cxnSp).
 func (f *File) nextShapeID(slide *decodeSlide) int {
 	id := defaultXMLShapeID
 	for _, s := range slide.getShapes() {
@@ -537,6 +537,11 @@ func (f *File) nextShapeID(slide *decodeSlide) int {
 	for _, pic := range slide.getPictures() {
 		if pic.NonVisualPictureProperties != nil && pic.NonVisualPictureProperties.CommonNonVisualProperties != nil {
 			id = max(id, pic.NonVisualPictureProperties.CommonNonVisualProperties.ID)
+		}
+	}
+	for _, conn := range slide.getConnectors() {
+		if conn.NonVisualConnectorProperties != nil && conn.NonVisualConnectorProperties.CommonNonVisualProperties != nil {
+			id = max(id, conn.NonVisualConnectorProperties.CommonNonVisualProperties.ID)
 		}
 	}
 	return id + 1
