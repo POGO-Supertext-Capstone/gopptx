@@ -498,6 +498,23 @@ func relationshipsEqual(a, b []relationship) bool {
 // slideWriter provides a function to save ppt/slides/slide%d.xml after
 // serialize structure.
 func (f *File) slideWriter() {
+	newCommonNonVisualProperties := func(
+		dcnvp *decodeCommonNonVisualProperties,
+	) *CommonNonVisualProperties {
+		if dcnvp == nil {
+			return nil
+		}
+		cnvp := &CommonNonVisualProperties{
+			ID:    dcnvp.ID,
+			Name:  dcnvp.Name,
+			Title: dcnvp.Title,
+		}
+		if dcnvp.ExtLst != nil {
+			cnvp.ExtLst = &ExtLst{Content: dcnvp.ExtLst.Content}
+		}
+		return cnvp
+	}
+
 	newNonVisualGroupShapeProperties := func(
 		nvgsp *decodeNonVisualGroupShapeProperties,
 	) *NonVisualGroupShapeProperties {
@@ -505,7 +522,7 @@ func (f *File) slideWriter() {
 			return nil
 		}
 		return &NonVisualGroupShapeProperties{
-			CommonNonVisualProperties:           nvgsp.CommonNonVisualProperties,
+			CommonNonVisualProperties:           newCommonNonVisualProperties(nvgsp.CommonNonVisualProperties),
 			CommonNonVisualGroupShapeProperties: nvgsp.CommonNonVisualGroupShapeProperties,
 			NonVisualProperties:                 (*NonVisualProperties)(nvgsp.NonVisualProperties),
 		}
@@ -554,7 +571,7 @@ func (f *File) slideWriter() {
 		}
 	}
 
-	newLine := func(dl *decodeLine) *Line {
+	newLine := func(dl *DecodeLine) *Line {
 		if dl == nil {
 			return nil
 		}
@@ -562,6 +579,7 @@ func (f *File) slideWriter() {
 			Width:     dl.Width,
 			NoFill:    dl.NoFill,
 			SolidFill: newSolidFill(dl.SolidFill),
+			PrstDash:  dl.PrstDash,
 		}
 	}
 
@@ -680,6 +698,7 @@ func (f *File) slideWriter() {
 			NoFill:         dsp.NoFill,
 			SolidFill:      newSolidFill(dsp.SolidFill),
 			Ln:             newLine(dsp.Ln),
+			EffectList:     dsp.EffectList,
 		}
 	}
 
@@ -704,7 +723,7 @@ func (f *File) slideWriter() {
 		}
 
 		return &NonVisualShapeProperties{
-			CommonNonVisualProperties:      dnsp.CommonNonVisualProperties,
+			CommonNonVisualProperties:      newCommonNonVisualProperties(dnsp.CommonNonVisualProperties),
 			CommonNonVisualShapeProperties: commonNonVisualShapeProperties,
 			NonVisualProperties:            nonVisualProperties,
 		}
@@ -722,7 +741,7 @@ func (f *File) slideWriter() {
 		pic := Picture{}
 		if dp.NonVisualPictureProperties != nil {
 			pic.NonVisualPictureProperties = &NonVisualPictureProperties{
-				CommonNonVisualProperties:        dp.NonVisualPictureProperties.CommonNonVisualProperties,
+				CommonNonVisualProperties:        newCommonNonVisualProperties(dp.NonVisualPictureProperties.CommonNonVisualProperties),
 				CommonNonVisualPictureProperties: dp.NonVisualPictureProperties.CommonNonVisualPictureProperties,
 				NonVisualProperties:              (*NonVisualProperties)(dp.NonVisualPictureProperties.NonVisualProperties),
 			}
@@ -743,6 +762,20 @@ func (f *File) slideWriter() {
 		}
 		pic.ShapeProperties = newShapeProperties(dp.ShapeProperties)
 		return pic
+	}
+
+	newConnector := func(dc decodeConnector) Connector {
+		conn := Connector{}
+		if dc.NonVisualConnectorProperties != nil {
+			conn.NonVisualConnectorProperties = &NonVisualConnectorProperties{
+				CommonNonVisualProperties:          newCommonNonVisualProperties(dc.NonVisualConnectorProperties.CommonNonVisualProperties),
+				CommonNonVisualConnectorProperties: dc.NonVisualConnectorProperties.CommonNonVisualConnectorProperties,
+				NonVisualProperties:                (*NonVisualProperties)(dc.NonVisualConnectorProperties.NonVisualProperties),
+			}
+		}
+		conn.ShapeProperties = newShapeProperties(dc.ShapeProperties)
+
+		return conn
 	}
 
 	newBG := func(db *DecodeBackground) *bg {
@@ -781,6 +814,11 @@ func (f *File) slideWriter() {
 				pictures[i] = newPicture(pic)
 			}
 
+			connectors := make([]Connector, len(ds.CommonSlideData.ShapeTree.Connector))
+			for i, conn := range ds.CommonSlideData.ShapeTree.Connector {
+				connectors[i] = newConnector(conn)
+			}
+
 			var altContent *alternateContent
 			if ds.DecodeAlternateContent != nil {
 				altContent = &alternateContent{
@@ -811,6 +849,7 @@ func (f *File) slideWriter() {
 						GroupShapeProperties:          newGroupShapeProperties(ds.CommonSlideData.ShapeTree.GroupShapeProperties),
 						Shape:                         shapes,
 						Picture:                       pictures,
+						Connector:                     connectors,
 					},
 				},
 				ColorMapOverride: clrMapOverride,

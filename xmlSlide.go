@@ -49,6 +49,7 @@ type ShapeTree struct {
 	GroupShapeProperties          *GroupShapeProperties          `xml:"p:grpSpPr,omitempty"`
 	Shape                         []Shape                        `xml:"p:sp"`
 	Picture                       []Picture                      `xml:"p:pic"`
+	Connector                     []Connector                    `xml:"p:cxnSp"`
 }
 
 type NonVisualGroupShapeProperties struct {
@@ -105,6 +106,24 @@ type CommonNonVisualPictureProperties struct {
 	PreferRelativeResize *int `xml:"preferRelativeResize,attr,omitempty"`
 }
 
+// Connector defines a connector shape (p:cxnSp) in the slide shape tree.
+type Connector struct {
+	NonVisualConnectorProperties *NonVisualConnectorProperties `xml:"p:nvCxnSpPr"`
+	ShapeProperties              *ShapeProperties              `xml:"p:spPr"`
+}
+
+// NonVisualConnectorProperties defines the non-visual properties of a
+// connector (p:nvCxnSpPr).
+type NonVisualConnectorProperties struct {
+	CommonNonVisualProperties          *CommonNonVisualProperties          `xml:"p:cNvPr"`
+	CommonNonVisualConnectorProperties *CommonNonVisualConnectorProperties `xml:"p:cNvCxnSpPr"`
+	NonVisualProperties                *NonVisualProperties                `xml:"p:nvPr"`
+}
+
+// CommonNonVisualConnectorProperties defines the common non-visual properties
+// of a connector (p:cNvCxnSpPr).
+type CommonNonVisualConnectorProperties struct{}
+
 // BlipFill defines the blip fill (p:blipFill) element of a picture.
 type BlipFill struct {
 	Blip    *Blip    `xml:"a:blip"`
@@ -158,6 +177,7 @@ type ShapeProperties struct {
 	NoFill         *noFill         `xml:"a:noFill,omitempty"`
 	SolidFill      *SolidFill      `xml:"a:solidFill,omitempty"`
 	Ln             *Line           `xml:"a:ln,omitempty"`
+	EffectList     *innerXML       `xml:"a:effectLst,omitempty"`
 }
 
 type PresetGeometry struct {
@@ -169,6 +189,12 @@ type Line struct {
 	Width     *int       `xml:"w,attr,omitempty"`
 	NoFill    *noFill    `xml:"a:noFill,omitempty"`
 	SolidFill *SolidFill `xml:"a:solidFill,omitempty"`
+	PrstDash  *PrstDash  `xml:"a:prstDash,omitempty"`
+}
+
+// PrstDash defines the preset dash style (a:prstDash) element of the line.
+type PrstDash struct {
+	Val string `xml:"val,attr"`
 }
 
 type TextBody struct {
@@ -281,18 +307,27 @@ type decodeShapeTree struct {
 	GroupShapeProperties          *decodeGroupShapeProperties          `xml:"grpSpPr,omitempty"`
 	Shape                         []decodeShape                        `xml:"sp"`
 	Picture                       []decodePicture                      `xml:"pic"`
+	Connector                     []decodeConnector                    `xml:"cxnSp"`
 }
 
 type decodeNonVisualGroupShapeProperties struct {
-	CommonNonVisualProperties           *CommonNonVisualProperties           `xml:"cNvPr"`
+	CommonNonVisualProperties           *decodeCommonNonVisualProperties     `xml:"cNvPr"`
 	CommonNonVisualGroupShapeProperties *CommonNonVisualGroupShapeProperties `xml:"cNvGrpSpPr"`
 	NonVisualProperties                 *decodeNonVisualProperties           `xml:"nvPr"`
 }
 
 type CommonNonVisualProperties struct {
-	ID    int    `xml:"id,attr"`
-	Name  string `xml:"name,attr"`
-	Title string `xml:"title,attr,omitempty"`
+	ID     int     `xml:"id,attr"`
+	Name   string  `xml:"name,attr"`
+	Title  string  `xml:"title,attr,omitempty"`
+	ExtLst *ExtLst `xml:"a:extLst,omitempty"`
+}
+
+// ExtLst defines the extension list (a:extLst) element of the common
+// non-visual properties. Its content (for example the a16:creationId
+// extension) is preserved as-is on the round trip.
+type ExtLst struct {
+	Content string `xml:",innerxml"`
 }
 
 type CommonNonVisualGroupShapeProperties struct{}
@@ -343,9 +378,32 @@ type decodePicture struct {
 // decodeNonVisualPictureProperties directly maps the nvPicPr element of the
 // picture.
 type decodeNonVisualPictureProperties struct {
-	CommonNonVisualProperties        *CommonNonVisualProperties        `xml:"cNvPr"`
+	CommonNonVisualProperties        *decodeCommonNonVisualProperties  `xml:"cNvPr"`
 	CommonNonVisualPictureProperties *CommonNonVisualPictureProperties `xml:"cNvPicPr"`
 	NonVisualProperties              *decodeNonVisualProperties        `xml:"nvPr"`
+}
+
+// decodeConnector directly maps the cxnSp element in the shape tree.
+type decodeConnector struct {
+	NonVisualConnectorProperties *decodeNonVisualConnectorProperties `xml:"nvCxnSpPr"`
+	ShapeProperties              *DecodeShapeProperties              `xml:"spPr"`
+}
+
+// decodeNonVisualConnectorProperties directly maps the nvCxnSpPr element of
+// the connector.
+type decodeNonVisualConnectorProperties struct {
+	CommonNonVisualProperties          *decodeCommonNonVisualProperties    `xml:"cNvPr"`
+	CommonNonVisualConnectorProperties *CommonNonVisualConnectorProperties `xml:"cNvCxnSpPr"`
+	NonVisualProperties                *decodeNonVisualProperties          `xml:"nvPr"`
+}
+
+// decodeCommonNonVisualProperties directly maps the cNvPr element of the
+// non-visual properties.
+type decodeCommonNonVisualProperties struct {
+	ID     int       `xml:"id,attr"`
+	Name   string    `xml:"name,attr"`
+	Title  string    `xml:"title,attr,omitempty"`
+	ExtLst *innerXML `xml:"extLst,omitempty"`
 }
 
 // decodeBlipFill directly maps the blipFill element of the picture.
@@ -366,7 +424,7 @@ type decodeStretch struct {
 }
 
 type decodeNonVisualShapeProperties struct {
-	CommonNonVisualProperties      *CommonNonVisualProperties            `xml:"cNvPr"`
+	CommonNonVisualProperties      *decodeCommonNonVisualProperties      `xml:"cNvPr"`
 	CommonNonVisualShapeProperties *decodeCommonNonVisualShapeProperties `xml:"cNvSpPr"`
 	NonVisualProperties            *decodeNonVisualProperties            `xml:"nvPr"`
 }
@@ -385,7 +443,8 @@ type DecodeShapeProperties struct {
 	PresetGeometry *DecodePresetGeometry `xml:"prstGeom,omitempty"`
 	NoFill         *noFill               `xml:"noFill,omitempty"`
 	SolidFill      *DecodeSolidFill      `xml:"solidFill,omitempty"`
-	Ln             *decodeLine           `xml:"ln,omitempty"`
+	Ln             *DecodeLine           `xml:"ln,omitempty"`
+	EffectList     *innerXML             `xml:"effectLst,omitempty"`
 }
 
 type noFill struct{}
@@ -403,10 +462,12 @@ type AdjustValue struct {
 	Formula string `xml:"fmla,attr"`
 }
 
-type decodeLine struct {
+// DecodeLine directly maps the ln element of the shape properties.
+type DecodeLine struct {
 	Width     *int             `xml:"w,attr,omitempty"`
 	NoFill    *noFill          `xml:"noFill,omitempty"`
 	SolidFill *DecodeSolidFill `xml:"solidFill,omitempty"`
+	PrstDash  *PrstDash        `xml:"prstDash,omitempty"`
 }
 
 type DecodeTextBody struct {

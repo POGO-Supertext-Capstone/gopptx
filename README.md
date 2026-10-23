@@ -329,6 +329,96 @@ when no other part of the presentation references it anymore.
 Supported image formats are JPEG, PNG, GIF, BMP, TIFF, WEBP, ICO, EMF, WMF and
 SVG.
 
+### Working with connectors
+
+Connectors (the `p:cxnSp` shapes — the lines that link shapes on a slide) can be
+created, read, deleted and are preserved on save. The following constitutes the
+bare to work with the connectors of a slide.
+
+```go
+package main
+
+import (
+    "fmt"
+
+    "github.com/kenny-not-dead/gopptx"
+)
+
+func main() {
+    f, err := gopptx.OpenFile("presentation.pptx")
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+    defer func() {
+        // Close the presentation.
+        if err := f.Close(); err != nil {
+            fmt.Println(err)
+        }
+    }()
+
+    // Create a connector on the slide 256: a straight line with a width,
+    // a color and the "dash" style (all the line properties are in
+    // DecodeLine, the same way the shapes use it).
+    width := 19050
+    id, err := f.CreateConnector(256, gopptx.DecodeShapeProperties{
+        Xfrm: &gopptx.DecodeXfrm{
+            Offset:  &gopptx.Offset{X: 457200, Y: 381000},
+            Extents: &gopptx.Extents{CX: 9144000, CY: 0},
+        },
+        PresetGeometry: &gopptx.DecodePresetGeometry{Preset: "straightConnector1"},
+        Ln: &gopptx.DecodeLine{
+            Width: &width,
+            SolidFill: &gopptx.DecodeSolidFill{
+                SolidRGBColor: &gopptx.SolidRGBColor{Val: "394655"},
+            },
+            PrstDash: &gopptx.PrstDash{Val: "dash"},
+        },
+    })
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+    fmt.Println("created the connector", id)
+
+    // Get the connectors (p:cxnSp shapes) of the slide.
+    connectors, err := f.GetConnectors(256)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+    for _, connector := range connectors {
+        info := connector.NonVisualConnectorProperties.CommonNonVisualProperties
+        fmt.Println(info.ID, info.Name)
+    }
+
+    // Get a single connector by the id attribute of its p:cNvPr element.
+    if connector, err := f.GetConnector(256, id); err != nil {
+        fmt.Println(err)
+        return
+    } else {
+        fmt.Println(connector.ShapeProperties.PresetGeometry.Preset)
+    }
+
+    // Delete the connector by the slide id and the connector id.
+    if err := f.DeleteConnector(256, id); err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    // Save the presentation with the origin path.
+    if err := f.Save(); err != nil {
+        fmt.Println(err)
+        return
+    }
+}
+```
+
+When a slide is modified and saved, the connectors of the slide are preserved
+together with the shapes and the pictures, including the line properties
+(`a:ln`: width, color, dash style) and the `a16:creationId` extension
+(`p:cNvPr/a:extLst`).
+
 ## Contributing
 
 Contributions are welcome! Open a pull request to fix a bug, or open an issue to discuss a new feature or change. XML is compliant with [part 1 of the 5th edition of the ECMA-376 Standard for Office Open XML](https://www.ecma-international.org/publications-and-standards/standards/ecma-376/).
