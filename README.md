@@ -122,6 +122,23 @@ func main() {
 		fmt.Println(err)
 	}
 
+    // Set the position and the size (a:xfrm) of the shape by the slide id
+    // and the shape id.
+    err = f.SetShapeXfrm(256, 8, gopptx.DecodeXfrm{
+        Offset: &gopptx.Offset{
+            X: 1697760,
+            Y: 1828800,
+        },
+        Extents: &gopptx.Extents{
+            CX: 2417040,
+            CY: 685800,
+        },
+    })
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
     err := f.SaveAs("presentation.pptx")
 	if err != nil {
         fmt.Println(err)

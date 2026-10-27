@@ -23,7 +23,8 @@ import (
 )
 
 // GetPictures provides a function to get pictures (p:pic shapes) by given
-// slide id.
+// slide id, in the document order. The pictures are returned by value:
+// edits of the returned slice do not affect the slide.
 func (f *File) GetPictures(slideID int) ([]decodePicture, error) {
 	slide, err := f.slideReader(slideID)
 	if err != nil {
@@ -33,28 +34,35 @@ func (f *File) GetPictures(slideID int) ([]decodePicture, error) {
 	return slide.getPictures(), err
 }
 
-// getPictures returns pictures of the slide.
+// getPictures returns the pictures of the slide, in the document order.
 func (ds *decodeSlide) getPictures() []decodePicture {
-	return ds.CommonSlideData.ShapeTree.Picture
+	var pictures []decodePicture
+	for i := range ds.CommonSlideData.ShapeTree.Children {
+		if child := ds.CommonSlideData.ShapeTree.Children[i].Picture; child != nil {
+			pictures = append(pictures, *child)
+		}
+	}
+
+	return pictures
 }
 
 // GetPicture provides a function to get a picture by given slide id and
 // picture id (the id attribute of the p:cNvPr element).
-func (f *File) GetPicture(slideID int, pictureID int) (*decodePicture, error) {
+func (f *File) GetPicture(slideID int, pictureID int) (decodePicture, error) {
 	pictures, err := f.GetPictures(slideID)
 	if err != nil {
-		return nil, err
+		return decodePicture{}, err
 	}
 
-	for i := range pictures {
-		if pictures[i].NonVisualPictureProperties != nil &&
-			pictures[i].NonVisualPictureProperties.CommonNonVisualProperties != nil &&
-			pictures[i].NonVisualPictureProperties.CommonNonVisualProperties.ID == pictureID {
-			return &pictures[i], nil
+	for _, pic := range pictures {
+		if pic.NonVisualPictureProperties != nil &&
+			pic.NonVisualPictureProperties.CommonNonVisualProperties != nil &&
+			pic.NonVisualPictureProperties.CommonNonVisualProperties.ID == pictureID {
+			return pic, nil
 		}
 	}
 
-	return nil, ErrPictureNotExist{pictureID}
+	return decodePicture{}, ErrPictureNotExist{pictureID}
 }
 
 // GetImage provides a function to get the image data of the slide referenced
@@ -246,7 +254,9 @@ func (f *File) AddImageFromBytes(slideID int, data []byte, opts *PictureOptions)
 		},
 	}
 
-	slide.CommonSlideData.ShapeTree.Picture = append(slide.CommonSlideData.ShapeTree.Picture, picture)
+	// the new picture is appended to the end of the shape tree: it is
+	// drawn above the existing shapes of the slide
+	slide.CommonSlideData.ShapeTree.Children = append(slide.CommonSlideData.ShapeTree.Children, decodeShapeTreeChild{Picture: &picture})
 
 	return pictureID, nil
 }
@@ -277,11 +287,20 @@ func (f *File) DeleteImage(slideID int, pictureID int) error {
 		return ErrPictureNotExist{pictureID}
 	}
 
-	// the picture is taken before the slice removal, the in-place removal
-	// overwrites the removed element with the next one
+	// the picture is taken before the removal
 	pic := pictures[idx]
 	// remove the picture shape from the shape tree of the slide
-	slide.CommonSlideData.ShapeTree.Picture = append(pictures[:idx], pictures[idx+1:]...)
+	children := slide.CommonSlideData.ShapeTree.Children
+	for i := range children {
+		if child := children[i].Picture; child != nil &&
+			child.NonVisualPictureProperties != nil &&
+			child.NonVisualPictureProperties.CommonNonVisualProperties != nil &&
+			child.NonVisualPictureProperties.CommonNonVisualProperties.ID == pictureID {
+			slide.CommonSlideData.ShapeTree.Children = append(children[:i], children[i+1:]...)
+			break
+		}
+	}
+
 	if pic.BlipFill == nil || pic.BlipFill.Blip == nil || pic.BlipFill.Blip.Embed == "" {
 		return nil
 	}
