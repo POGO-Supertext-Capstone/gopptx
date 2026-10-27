@@ -10,7 +10,8 @@ package gopptx
 import "fmt"
 
 // GetConnectors provides a function to get connectors (p:cxnSp shapes) by
-// given slide id.
+// given slide id, in the document order. The connectors are returned by
+// value: edits of the returned slice do not affect the slide.
 func (f *File) GetConnectors(slideID int) ([]decodeConnector, error) {
 	slide, err := f.slideReader(slideID)
 	if err != nil {
@@ -20,28 +21,35 @@ func (f *File) GetConnectors(slideID int) ([]decodeConnector, error) {
 	return slide.getConnectors(), nil
 }
 
-// getConnectors returns connectors of the slide.
+// getConnectors returns the connectors of the slide, in the document order.
 func (ds *decodeSlide) getConnectors() []decodeConnector {
-	return ds.CommonSlideData.ShapeTree.Connector
+	var connectors []decodeConnector
+	for i := range ds.CommonSlideData.ShapeTree.Children {
+		if child := ds.CommonSlideData.ShapeTree.Children[i].Connector; child != nil {
+			connectors = append(connectors, *child)
+		}
+	}
+	
+	return connectors
 }
 
 // GetConnector provides a function to get a connector by given slide id and
 // connector id (the id attribute of the p:cNvPr element).
-func (f *File) GetConnector(slideID int, connectorID int) (*decodeConnector, error) {
+func (f *File) GetConnector(slideID int, connectorID int) (decodeConnector, error) {
 	connectors, err := f.GetConnectors(slideID)
 	if err != nil {
-		return nil, err
+		return decodeConnector{}, err
 	}
 
-	for i := range connectors {
-		if connectors[i].NonVisualConnectorProperties != nil &&
-			connectors[i].NonVisualConnectorProperties.CommonNonVisualProperties != nil &&
-			connectors[i].NonVisualConnectorProperties.CommonNonVisualProperties.ID == connectorID {
-			return &connectors[i], nil
+	for _, conn := range connectors {
+		if conn.NonVisualConnectorProperties != nil &&
+			conn.NonVisualConnectorProperties.CommonNonVisualProperties != nil &&
+			conn.NonVisualConnectorProperties.CommonNonVisualProperties.ID == connectorID {
+			return conn, nil
 		}
 	}
 
-	return nil, ErrConnectorNotExist{connectorID}
+	return decodeConnector{}, ErrConnectorNotExist{connectorID}
 }
 
 // CreateConnector provides the function to create a new connector
@@ -52,8 +60,6 @@ func (f *File) CreateConnector(slideID int, shapeProperties DecodeShapePropertie
 	if err != nil {
 		return -1, err
 	}
-
-	connectors := slide.getConnectors()
 
 	// the connector id must be unique in the whole shape tree (sp + pic +
 	// cxnSp), the same way CreateShape and AddImage allocate shape ids
@@ -75,9 +81,9 @@ func (f *File) CreateConnector(slideID int, shapeProperties DecodeShapePropertie
 		ShapeProperties: &shapeProperties,
 	}
 
-	connectors = append(connectors, newConnector)
-
-	slide.CommonSlideData.ShapeTree.Connector = connectors
+	// the new connector is appended to the end of the shape tree: it is
+	// drawn above the existing shapes of the slide
+	slide.CommonSlideData.ShapeTree.Children = append(slide.CommonSlideData.ShapeTree.Children, decodeShapeTreeChild{Connector: &newConnector})
 
 	return connectorID, nil
 }
@@ -90,13 +96,14 @@ func (f *File) DeleteConnector(slideID int, connectorID int) error {
 		return err
 	}
 
-	connectors := slide.getConnectors()
+	children := slide.CommonSlideData.ShapeTree.Children
 
 	deleteIndex := -1
-	for i := range connectors {
-		if connectors[i].NonVisualConnectorProperties != nil &&
-			connectors[i].NonVisualConnectorProperties.CommonNonVisualProperties != nil &&
-			connectors[i].NonVisualConnectorProperties.CommonNonVisualProperties.ID == connectorID {
+	for i := range children {
+		if conn := children[i].Connector; conn != nil &&
+			conn.NonVisualConnectorProperties != nil &&
+			conn.NonVisualConnectorProperties.CommonNonVisualProperties != nil &&
+			conn.NonVisualConnectorProperties.CommonNonVisualProperties.ID == connectorID {
 
 			deleteIndex = i
 
@@ -108,9 +115,7 @@ func (f *File) DeleteConnector(slideID int, connectorID int) error {
 		return ErrConnectorNotExist{connectorID}
 	}
 
-	connectors = append(connectors[:deleteIndex], connectors[deleteIndex+1:]...)
-
-	slide.CommonSlideData.ShapeTree.Connector = connectors
+	slide.CommonSlideData.ShapeTree.Children = append(children[:deleteIndex], children[deleteIndex+1:]...)
 
 	return nil
 }

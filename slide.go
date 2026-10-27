@@ -184,7 +184,9 @@ func (f *File) getSlideXMLPath(id int) (string, bool) {
 	return path, ok
 }
 
-// GetShapes provides a function to get shapes by given slide id.
+// GetShapes provides a function to get shapes by given slide id, in the
+// document order. The shapes are returned by value: edits of the returned
+// slice do not affect the slide, use the SetShape* methods to change a shape.
 func (f *File) GetShapes(slideID int) ([]decodeShape, error) {
 	var shapes []decodeShape
 	slide, err := f.slideReader(slideID)
@@ -195,24 +197,37 @@ func (f *File) GetShapes(slideID int) ([]decodeShape, error) {
 	return slide.getShapes(), err
 }
 
-// getShapes returns shapes of the slide.
+// getShapes returns the shapes of the slide, in the document order.
 func (ds *decodeSlide) getShapes() []decodeShape {
-	return ds.CommonSlideData.ShapeTree.Shape
+	var shapes []decodeShape
+	for i := range ds.CommonSlideData.ShapeTree.Children {
+		if child := ds.CommonSlideData.ShapeTree.Children[i].Shape; child != nil {
+			shapes = append(shapes, *child)
+		}
+	}
+
+	return shapes
 }
 
 // SetShapeTextBody provides a function to set shape text body by given shape id.
 func (f *File) SetShapeTextBody(slideID int, shapeID int, textBody DecodeTextBody) error {
-	shapes, err := f.GetShapes(slideID)
+	slide, err := f.slideReader(slideID)
 	if err != nil {
 		return err
 	}
 
-	for i := range shapes {
-		if shapes[i].NonVisualShapeProperties.CommonNonVisualProperties.ID == shapeID {
-			shapes[i].TextBody = &textBody
-
-			return nil
+	for i := range slide.CommonSlideData.ShapeTree.Children {
+		shape := slide.CommonSlideData.ShapeTree.Children[i].Shape
+		if shape == nil ||
+			shape.NonVisualShapeProperties == nil ||
+			shape.NonVisualShapeProperties.CommonNonVisualProperties == nil ||
+			shape.NonVisualShapeProperties.CommonNonVisualProperties.ID != shapeID {
+			continue
 		}
+
+		shape.TextBody = &textBody
+
+		return nil
 	}
 
 	return ErrShapeNotExist{shapeID}
@@ -265,9 +280,10 @@ func (f *File) SetShapeFill(slideID int, shapeID int, fill DecodeSolidFill) erro
 		return err
 	}
 
-	for i := range slide.CommonSlideData.ShapeTree.Shape {
-		shape := &slide.CommonSlideData.ShapeTree.Shape[i]
-		if shape.NonVisualShapeProperties == nil ||
+	for i := range slide.CommonSlideData.ShapeTree.Children {
+		shape := slide.CommonSlideData.ShapeTree.Children[i].Shape
+		if shape == nil ||
+			shape.NonVisualShapeProperties == nil ||
 			shape.NonVisualShapeProperties.CommonNonVisualProperties == nil ||
 			shape.NonVisualShapeProperties.CommonNonVisualProperties.ID != shapeID {
 			continue
@@ -292,9 +308,10 @@ func (f *File) GetShapeFill(slideID int, shapeID int) (*DecodeSolidFill, error) 
 		return nil, err
 	}
 
-	for i := range slide.CommonSlideData.ShapeTree.Shape {
-		shape := &slide.CommonSlideData.ShapeTree.Shape[i]
-		if shape.NonVisualShapeProperties == nil ||
+	for i := range slide.CommonSlideData.ShapeTree.Children {
+		shape := slide.CommonSlideData.ShapeTree.Children[i].Shape
+		if shape == nil ||
+			shape.NonVisualShapeProperties == nil ||
 			shape.NonVisualShapeProperties.CommonNonVisualProperties == nil ||
 			shape.NonVisualShapeProperties.CommonNonVisualProperties.ID != shapeID {
 			continue
@@ -317,9 +334,10 @@ func (f *File) DeleteShapeFill(slideID int, shapeID int) error {
 		return err
 	}
 
-	for i := range slide.CommonSlideData.ShapeTree.Shape {
-		shape := &slide.CommonSlideData.ShapeTree.Shape[i]
-		if shape.NonVisualShapeProperties == nil ||
+	for i := range slide.CommonSlideData.ShapeTree.Children {
+		shape := slide.CommonSlideData.ShapeTree.Children[i].Shape
+		if shape == nil ||
+			shape.NonVisualShapeProperties == nil ||
 			shape.NonVisualShapeProperties.CommonNonVisualProperties == nil ||
 			shape.NonVisualShapeProperties.CommonNonVisualProperties.ID != shapeID {
 			continue
@@ -336,6 +354,193 @@ func (f *File) DeleteShapeFill(slideID int, shapeID int) error {
 	return ErrShapeNotExist{shapeID}
 }
 
+// SetShapeXfrm provides a function to set the position and the size
+// (a:xfrm) of the shape by given slide id and shape id.
+func (f *File) SetShapeXfrm(slideID int, shapeID int, xfrm DecodeXfrm) error {
+	slide, err := f.slideReader(slideID)
+	if err != nil {
+		return err
+	}
+
+	for i := range slide.CommonSlideData.ShapeTree.Children {
+		shape := slide.CommonSlideData.ShapeTree.Children[i].Shape
+		if shape == nil ||
+			shape.NonVisualShapeProperties == nil ||
+			shape.NonVisualShapeProperties.CommonNonVisualProperties == nil ||
+			shape.NonVisualShapeProperties.CommonNonVisualProperties.ID != shapeID {
+			continue
+		}
+		if shape.ShapeProperties == nil {
+			shape.ShapeProperties = &DecodeShapeProperties{}
+		}
+		shape.ShapeProperties.Xfrm = &xfrm
+
+		return nil
+	}
+
+	return ErrShapeNotExist{shapeID}
+}
+
+// ShapeOrder is a single entry of the order (the z-order) of the children
+// of the slide shape tree: the kind of the child and its id (the id
+// attribute of the p:cNvPr element of the child).
+type ShapeOrder struct {
+	Kind string
+	ID   int
+}
+
+// The kinds of the children of the slide shape tree, the local names of
+// the elements in the slide XML.
+const (
+	// ShapeOrderSp is the kind of the p:sp child of the shape tree.
+	ShapeOrderSp = "sp"
+	// ShapeOrderPic is the kind of the p:pic child of the shape tree.
+	ShapeOrderPic = "pic"
+	// ShapeOrderCxnSp is the kind of the p:cxnSp child of the shape tree.
+	ShapeOrderCxnSp = "cxnSp"
+)
+
+// GetShapeOrder provides a function to get the order (the z-order) of the
+// children of the shape tree of the slide by given slide id.
+func (f *File) GetShapeOrder(slideID int) ([]ShapeOrder, error) {
+	var shapeOrder []ShapeOrder
+	slide, err := f.slideReader(slideID)
+	if err != nil {
+		return shapeOrder, err
+	}
+
+	for i := range slide.CommonSlideData.ShapeTree.Children {
+		if entry, ok := shapeOrderOf(&slide.CommonSlideData.ShapeTree.Children[i]); ok {
+			shapeOrder = append(shapeOrder, entry)
+		}
+	}
+
+	return shapeOrder, nil
+}
+
+// SetShapeOrder provides a function to set the order (the z-order) of the
+// children of the shape tree of the slide by given slide id: the given
+// order must contain every child of the shape tree of the slide exactly
+// once.
+func (f *File) SetShapeOrder(slideID int, shapeOrder []ShapeOrder) error {
+	slide, err := f.slideReader(slideID)
+	if err != nil {
+		return err
+	}
+
+	children := slide.CommonSlideData.ShapeTree.Children
+
+	// the given order must contain every child of the shape tree exactly
+	// once
+	index := make(map[ShapeOrder]int, len(children))
+	for i := range children {
+		entry, ok := shapeOrderOf(&children[i])
+		if !ok {
+			// the child has no id (the cNvPr element is absent in the
+			// slide XML): it can not be identified in the given order
+			return ErrShapeOrderInvalid
+		}
+		index[entry] = i
+	}
+	if len(shapeOrder) != len(index) {
+		return ErrShapeOrderInvalid
+	}
+	seen := make(map[ShapeOrder]bool, len(shapeOrder))
+	for _, entry := range shapeOrder {
+		if _, ok := index[entry]; !ok || seen[entry] {
+			return ErrShapeOrderInvalid
+		}
+		seen[entry] = true
+	}
+
+	reordered := make([]decodeShapeTreeChild, 0, len(shapeOrder))
+	for _, entry := range shapeOrder {
+		reordered = append(reordered, children[index[entry]])
+	}
+	slide.CommonSlideData.ShapeTree.Children = reordered
+
+	return nil
+}
+
+// MoveShape moves the shape to a specified position in the shape tree of
+// the slide: the shape with the given source id is moved before the shape
+// with the given target id (the same way MoveSheet of the excelize library
+// moves the sheet before the target sheet).
+func (f *File) MoveShape(slideID int, sourceID, targetID int) error {
+	shapeOrder, err := f.GetShapeOrder(slideID)
+	if err != nil {
+		return err
+	}
+
+	sourceIdx, targetIdx := -1, -1
+	for i, entry := range shapeOrder {
+		if entry.ID == sourceID {
+			sourceIdx = i
+		}
+		if entry.ID == targetID {
+			targetIdx = i
+		}
+	}
+	if sourceIdx == -1 {
+		return ErrShapeNotExist{sourceID}
+	}
+	if targetIdx == -1 {
+		return ErrShapeNotExist{targetID}
+	}
+	if sourceIdx == targetIdx {
+		return nil
+	}
+
+	moved := shapeOrder[sourceIdx]
+	shapeOrder = append(shapeOrder[:sourceIdx], shapeOrder[sourceIdx+1:]...)
+	if targetIdx > sourceIdx {
+		targetIdx--
+	}
+	shapeOrder = append(shapeOrder[:targetIdx], append([]ShapeOrder{moved}, shapeOrder[targetIdx:]...)...)
+
+	return f.SetShapeOrder(slideID, shapeOrder)
+}
+
+// shapeOrderOf returns the order entry (the kind and the id) of the child
+// of the shape tree. It returns false when the child has no common non-
+// visual properties (the cNvPr element is absent in the slide XML).
+func shapeOrderOf(child *decodeShapeTreeChild) (ShapeOrder, bool) {
+	switch {
+	case child.Shape != nil:
+		if child.Shape.NonVisualShapeProperties == nil ||
+			child.Shape.NonVisualShapeProperties.CommonNonVisualProperties == nil {
+			return ShapeOrder{}, false
+		}
+		
+		return ShapeOrder{
+			Kind: ShapeOrderSp,
+			ID:   child.Shape.NonVisualShapeProperties.CommonNonVisualProperties.ID,
+		}, true
+	case child.Picture != nil:
+		if child.Picture.NonVisualPictureProperties == nil ||
+			child.Picture.NonVisualPictureProperties.CommonNonVisualProperties == nil {
+			return ShapeOrder{}, false
+		}
+
+		return ShapeOrder{
+			Kind: ShapeOrderPic,
+			ID:   child.Picture.NonVisualPictureProperties.CommonNonVisualProperties.ID,
+		}, true
+	case child.Connector != nil:
+		if child.Connector.NonVisualConnectorProperties == nil ||
+			child.Connector.NonVisualConnectorProperties.CommonNonVisualProperties == nil {
+			return ShapeOrder{}, false
+		}
+
+		return ShapeOrder{
+			Kind: ShapeOrderCxnSp,
+			ID:   child.Connector.NonVisualConnectorProperties.CommonNonVisualProperties.ID,
+		}, true
+	}
+
+	return ShapeOrder{}, false
+}
+
 // CreateShape provides the function to create  a new shape by given slide id and
 // returns the id of the shape in the slide after it appended.
 func (f *File) CreateShape(slideID int, shapeProperties DecodeShapeProperties, textBody DecodeTextBody) (int, error) {
@@ -344,10 +549,8 @@ func (f *File) CreateShape(slideID int, shapeProperties DecodeShapeProperties, t
 		return -1, err
 	}
 
-	shapes := slide.getShapes()
-
-	// the shape id must be unique in the whole shape tree (sp + pic), the
-	// same way AddImage allocates picture ids
+	// the shape id must be unique in the whole shape tree (sp + pic +
+	// cxnSp), the same way AddImage and CreateConnector allocate shape ids
 	shapeID := f.nextShapeID(slide)
 
 	// the body properties element is required in the text body by the schema
@@ -370,9 +573,9 @@ func (f *File) CreateShape(slideID int, shapeProperties DecodeShapeProperties, t
 		TextBody:        &textBody,
 	}
 
-	shapes = append(shapes, newShape)
-
-	slide.CommonSlideData.ShapeTree.Shape = shapes
+	// the new shape is appended to the end of the shape tree: it is drawn
+	// above the existing shapes of the slide
+	slide.CommonSlideData.ShapeTree.Children = append(slide.CommonSlideData.ShapeTree.Children, decodeShapeTreeChild{Shape: &newShape})
 
 	return shapeID, nil
 }
@@ -384,11 +587,14 @@ func (f *File) DeleteShape(slideID int, shapeID int) error {
 		return err
 	}
 
-	shapes := slide.getShapes()
+	children := slide.CommonSlideData.ShapeTree.Children
 
 	deleteSlideIndex := -1
-	for i := range shapes {
-		if shapes[i].NonVisualShapeProperties.CommonNonVisualProperties.ID == shapeID {
+	for i := range children {
+		if s := children[i].Shape; s != nil &&
+			s.NonVisualShapeProperties != nil &&
+			s.NonVisualShapeProperties.CommonNonVisualProperties != nil &&
+			s.NonVisualShapeProperties.CommonNonVisualProperties.ID == shapeID {
 
 			deleteSlideIndex = i
 
@@ -400,9 +606,7 @@ func (f *File) DeleteShape(slideID int, shapeID int) error {
 		return ErrSlideNotExist{slideID}
 	}
 
-	shapes = append(shapes[:deleteSlideIndex], shapes[deleteSlideIndex+1:]...)
-
-	slide.CommonSlideData.ShapeTree.Shape = shapes
+	slide.CommonSlideData.ShapeTree.Children = append(children[:deleteSlideIndex], children[deleteSlideIndex+1:]...)
 
 	return nil
 }

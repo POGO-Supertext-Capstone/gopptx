@@ -34,6 +34,10 @@ var (
 	// ErrUnsupportedImageFormat defined the error message on receive an
 	// unsupported image format.
 	ErrUnsupportedImageFormat = errors.New("unsupported image format")
+	// ErrShapeOrderInvalid is returned when the given order of the shape
+	// tree children does not match the shape tree of the slide: every
+	// child of the shape tree must be contained in the order exactly once.
+	ErrShapeOrderInvalid = errors.New("the order of the shapes does not match the shape tree of the slide")
 )
 
 // ErrSlideNotExist defined an error of slide that does not exist.

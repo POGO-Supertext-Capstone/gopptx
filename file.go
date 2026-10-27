@@ -636,6 +636,22 @@ func (f *File) slideWriter() {
 				SpacingPts:     dsc.SpacingPts,
 			}
 		}
+		newBulletFont := func(dbf *DecodeBulletFont) *BulletFont {
+			if dbf == nil {
+				return nil
+			}
+			return &BulletFont{
+				Typeface: dbf.Typeface,
+			}
+		}
+		newBulletChar := func(dbc *DecodeBulletChar) *BulletChar {
+			if dbc == nil {
+				return nil
+			}
+			return &BulletChar{
+				Char: dbc.Char,
+			}
+		}
 		return &ParagraphProperties{
 			Indent:           dpp.Indent,
 			Lvl:              dpp.Lvl,
@@ -645,6 +661,8 @@ func (f *File) slideWriter() {
 			LineSpacing:      lineSpacing,
 			SpacingBefore:    newSpacingChange(dpp.SpacingBefore),
 			SpacingAfter:     newSpacingChange(dpp.SpacingAfter),
+			BuFont:           newBulletFont(dpp.BuFont),
+			BuChar:           newBulletChar(dpp.BuChar),
 			BuNone:           dpp.BuNone,
 			DefRunProperties: newRunProperties(dpp.DefRunProperties),
 		}
@@ -804,19 +822,28 @@ func (f *File) slideWriter() {
 
 			ds := slide.(*decodeSlide)
 
-			shapes := make([]Shape, len(ds.CommonSlideData.ShapeTree.Shape))
-			for i, s := range ds.CommonSlideData.ShapeTree.Shape {
-				shapes[i] = newShape(s)
-			}
-
-			pictures := make([]Picture, len(ds.CommonSlideData.ShapeTree.Picture))
-			for i, pic := range ds.CommonSlideData.ShapeTree.Picture {
-				pictures[i] = newPicture(pic)
-			}
-
-			connectors := make([]Connector, len(ds.CommonSlideData.ShapeTree.Connector))
-			for i, conn := range ds.CommonSlideData.ShapeTree.Connector {
-				connectors[i] = newConnector(conn)
+			// the shapes, the pictures and the connectors of the shape tree;
+			// the document order of the children (the z-order) is recorded in
+			// the order of the shape tree and is preserved on save
+			var (
+				shapes     []Shape
+				pictures   []Picture
+				connectors []Connector
+				order      []shapeTreeOrderEntry
+			)
+			for i := range ds.CommonSlideData.ShapeTree.Children {
+				child := &ds.CommonSlideData.ShapeTree.Children[i]
+				switch {
+				case child.Shape != nil:
+					shapes = append(shapes, newShape(*child.Shape))
+					order = append(order, shapeTreeOrderEntry{kind: shapeTreeChildSp, index: len(shapes) - 1})
+				case child.Picture != nil:
+					pictures = append(pictures, newPicture(*child.Picture))
+					order = append(order, shapeTreeOrderEntry{kind: shapeTreeChildPic, index: len(pictures) - 1})
+				case child.Connector != nil:
+					connectors = append(connectors, newConnector(*child.Connector))
+					order = append(order, shapeTreeOrderEntry{kind: shapeTreeChildCxnSp, index: len(connectors) - 1})
+				}
 			}
 
 			var altContent *alternateContent
@@ -850,6 +877,7 @@ func (f *File) slideWriter() {
 						Shape:                         shapes,
 						Picture:                       pictures,
 						Connector:                     connectors,
+						shapeOrder:                    order,
 					},
 				},
 				ColorMapOverride: clrMapOverride,

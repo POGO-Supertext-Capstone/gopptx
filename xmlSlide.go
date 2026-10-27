@@ -44,12 +44,105 @@ type bgProperties struct {
 	EffectList *struct{}  `xml:"a:effectLst,omitempty"`
 }
 
+// shapeTreeChildKind is the kind of a child of the slide shape tree.
+type shapeTreeChildKind int
+
+const (
+	shapeTreeChildSp shapeTreeChildKind = iota
+	shapeTreeChildPic
+	shapeTreeChildCxnSp
+)
+
+// shapeTreeOrderEntry is one entry of the document order of the shape tree
+// children (the z-order of the shapes): the kind of the child and the index
+// of the element in the corresponding slice of the shape tree.
+type shapeTreeOrderEntry struct {
+	kind  shapeTreeChildKind
+	index int
+}
+
 type ShapeTree struct {
 	NonVisualGroupShapeProperties *NonVisualGroupShapeProperties `xml:"p:nvGrpSpPr,omitempty"`
 	GroupShapeProperties          *GroupShapeProperties          `xml:"p:grpSpPr,omitempty"`
 	Shape                         []Shape                        `xml:"p:sp"`
 	Picture                       []Picture                      `xml:"p:pic"`
 	Connector                     []Connector                    `xml:"p:cxnSp"`
+	// shapeOrder is the document order of the children (sp/pic/cxnSp) of
+	// the shape tree, the z-order of the shapes; when it is empty (the
+	// shape tree is built without the document order) the children are
+	// emitted as blocks in the struct field order
+	shapeOrder []shapeTreeOrderEntry
+}
+
+// MarshalXML writes the shape tree, keeping the document order of the
+// shapes, so the z-order of a modified slide is preserved on save. The
+// element names are written with the literal prefixes, the same way the
+// struct tags of the slide do it.
+func (st ShapeTree) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	start.Name = xml.Name{Local: "p:spTree"}
+	if err := e.EncodeToken(start); err != nil {
+		return err
+	}
+
+	if st.NonVisualGroupShapeProperties != nil {
+		if err := e.EncodeElement(st.NonVisualGroupShapeProperties, xml.StartElement{
+			Name: xml.Name{Local: "p:nvGrpSpPr"},
+		}); err != nil {
+			return err
+		}
+	}
+	if st.GroupShapeProperties != nil {
+		if err := e.EncodeElement(st.GroupShapeProperties, xml.StartElement{
+			Name: xml.Name{Local: "p:grpSpPr"},
+		}); err != nil {
+			return err
+		}
+	}
+
+	emit := func(name string, v interface{}) error {
+		return e.EncodeElement(v, xml.StartElement{Name: xml.Name{Local: name}})
+	}
+
+	if len(st.shapeOrder) == 0 {
+		// the document order is not recorded: the children are emitted as
+		// blocks in the struct field order, the same as before the order
+		// was introduced
+		for i := range st.Shape {
+			if err := emit("p:sp", &st.Shape[i]); err != nil {
+				return err
+			}
+		}
+		for i := range st.Picture {
+			if err := emit("p:pic", &st.Picture[i]); err != nil {
+				return err
+			}
+		}
+		for i := range st.Connector {
+			if err := emit("p:cxnSp", &st.Connector[i]); err != nil {
+				return err
+			}
+		}
+	} else {
+		for i := range st.shapeOrder {
+			entry := &st.shapeOrder[i]
+			switch entry.kind {
+			case shapeTreeChildSp:
+				if err := emit("p:sp", &st.Shape[entry.index]); err != nil {
+					return err
+				}
+			case shapeTreeChildPic:
+				if err := emit("p:pic", &st.Picture[entry.index]); err != nil {
+					return err
+				}
+			case shapeTreeChildCxnSp:
+				if err := emit("p:cxnSp", &st.Connector[entry.index]); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return e.EncodeToken(xml.EndElement{Name: start.Name})
 }
 
 type NonVisualGroupShapeProperties struct {
@@ -240,8 +333,22 @@ type ParagraphProperties struct {
 	LineSpacing      *LineSpacing   `xml:"a:lnSpc,omitempty"`
 	SpacingBefore    *SpacingChange `xml:"a:spcBef,omitempty"`
 	SpacingAfter     *SpacingChange `xml:"a:spcAft,omitempty"`
+	BuFont           *BulletFont    `xml:"a:buFont,omitempty"`
+	BuChar           *BulletChar    `xml:"a:buChar,omitempty"`
 	BuNone           *struct{}      `xml:"a:buNone,omitempty"`
 	DefRunProperties *RunProperties `xml:"a:defRPr,omitempty"`
+}
+
+// BulletFont defines the a:buFont element of the paragraph properties: the
+// typeface of the bullet character.
+type BulletFont struct {
+	Typeface string `xml:"typeface,attr,omitempty"`
+}
+
+// BulletChar defines the a:buChar element of the paragraph properties: the
+// character used as the bullet.
+type BulletChar struct {
+	Char string `xml:"char,attr,omitempty"`
 }
 
 // SpacingChange defines the spacing before (a:spcBef) or spacing after
@@ -302,12 +409,74 @@ type DecodeBGProperties struct {
 	EffectList *struct{}        `xml:"effectLst,omitempty"`
 }
 
+// decodeShapeTreeChild is a single node of the shape tree in the document
+// order. Exactly one of the fields is set.
+type decodeShapeTreeChild struct {
+	Shape     *decodeShape
+	Picture   *decodePicture
+	Connector *decodeConnector
+}
+
 type decodeShapeTree struct {
 	NonVisualGroupShapeProperties *decodeNonVisualGroupShapeProperties `xml:"nvGrpSpPr,omitempty"`
 	GroupShapeProperties          *decodeGroupShapeProperties          `xml:"grpSpPr,omitempty"`
-	Shape                         []decodeShape                        `xml:"sp"`
-	Picture                       []decodePicture                      `xml:"pic"`
-	Connector                     []decodeConnector                    `xml:"cxnSp"`
+	Children                      []decodeShapeTreeChild
+}
+
+// UnmarshalXML reads the shape tree, keeping the document order of the
+// shapes, so the z-order of the slide is preserved when it is modified and
+// saved.
+func (dst *decodeShapeTree) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	for {
+		token, err := d.Token()
+		if err != nil {
+			return err
+		}
+
+		switch t := token.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "nvGrpSpPr":
+				nv := new(decodeNonVisualGroupShapeProperties)
+				if err := d.DecodeElement(nv, &t); err != nil {
+					return err
+				}
+				dst.NonVisualGroupShapeProperties = nv
+			case "grpSpPr":
+				gs := new(decodeGroupShapeProperties)
+				if err := d.DecodeElement(gs, &t); err != nil {
+					return err
+				}
+				dst.GroupShapeProperties = gs
+			case "sp":
+				s := new(decodeShape)
+				if err := d.DecodeElement(s, &t); err != nil {
+					return err
+				}
+				dst.Children = append(dst.Children, decodeShapeTreeChild{Shape: s})
+			case "pic":
+				p := new(decodePicture)
+				if err := d.DecodeElement(p, &t); err != nil {
+					return err
+				}
+				dst.Children = append(dst.Children, decodeShapeTreeChild{Picture: p})
+			case "cxnSp":
+				c := new(decodeConnector)
+				if err := d.DecodeElement(c, &t); err != nil {
+					return err
+				}
+				dst.Children = append(dst.Children, decodeShapeTreeChild{Connector: c})
+			default:
+				// unknown child of the shape tree (grpSp, graphicFrame, ...):
+				// it is not modeled and is not preserved, the same as before
+				if err := d.Skip(); err != nil {
+					return err
+				}
+			}
+		case xml.EndElement:
+			return nil
+		}
+	}
 }
 
 type decodeNonVisualGroupShapeProperties struct {
@@ -507,8 +676,22 @@ type DecodeParagraphProperties struct {
 	LineSpacing      *DecodeLineSpacing   `xml:"lnSpc,omitempty"`
 	SpacingBefore    *DecodeSpacingChange `xml:"spcBef,omitempty"`
 	SpacingAfter     *DecodeSpacingChange `xml:"spcAft,omitempty"`
+	BuFont           *DecodeBulletFont    `xml:"buFont,omitempty"`
+	BuChar           *DecodeBulletChar    `xml:"buChar,omitempty"`
 	BuNone           *struct{}            `xml:"buNone,omitempty"`
 	DefRunProperties *DecodeRunProperties `xml:"defRPr,omitempty"`
+}
+
+// DecodeBulletFont directly maps the buFont element of the paragraph
+// properties: the typeface of the bullet character.
+type DecodeBulletFont struct {
+	Typeface string `xml:"typeface,attr,omitempty"`
+}
+
+// DecodeBulletChar directly maps the buChar element of the paragraph
+// properties: the character used as the bullet.
+type DecodeBulletChar struct {
+	Char string `xml:"char,attr,omitempty"`
 }
 
 // DecodeLineSpacing directly maps the lnSpc element of the paragraph
