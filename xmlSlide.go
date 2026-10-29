@@ -663,6 +663,8 @@ type NoAutofit struct{}
 type DecodeParagraph struct {
 	ParagraphProperties       *DecodeParagraphProperties `xml:"pPr,omitempty"`
 	Runs                      []DecodeRuns               `xml:"r"`
+	Breaks                    []struct{}                 `xml:"br"`
+	InnerXML                  string                     `xml:",innerxml"`
 	EndParagraphRunProperties *DecodeRunProperties       `xml:"endParaRPr,omitempty"`
 }
 
