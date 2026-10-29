@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	//go:embed templates/\[Content_Types].xml
+	//go:embed templates/*Content_Types*.xml
 	templateContentTypes string
 
 	//go:embed templates/\app.xml
